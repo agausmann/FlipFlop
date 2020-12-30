@@ -7,11 +7,12 @@ Inspired by:
 - [Minecraft](https://www.minecraft.net) by Mojang Studios, for the grid-based
   wiring mechanics in redstone.
 
-- [TUNG](https://jimmycushnie.itch.io/tung) and [Logic
-  World](https://logicworld.net) by Mouse Hat Games, for the art style.
-
 - [NandGame](https://www.nandgame.com) by Olav Junker Kjær, for the idea of
   building up from something simple.
+
+- [TUNG](https://jimmycushnie.itch.io/tung) and [Logic
+  World](https://logicworld.net) by Mouse Hat Games, and their community, for
+the inspiration and continued encouragement.
 
 ## License
 
