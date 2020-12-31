@@ -5,24 +5,30 @@ use std::collections::HashSet;
 fn main() {
     App::build()
         .add_plugins(DefaultPlugins)
-        .add_startup_system(setup.system())
         .add_resource(TickTimer(Timer::from_seconds(0.01, true)))
+        .add_resource(Config::default())
+        .add_startup_system(setup.system())
         .add_system(camera_movement.system())
         .add_system(tick.system())
         .run();
 }
 
-fn setup(commands: &mut Commands, mut materials: ResMut<Assets<ColorMaterial>>) {
-    let white_material = materials.add(Color::rgb(1.0, 1.0, 1.0).into());
+const TILE_PIXELS: f32 = 16.0;
 
+fn setup(commands: &mut Commands, mut materials: ResMut<Assets<ColorMaterial>>) {
     commands
         .spawn(Camera2dBundle::default())
-        .with(CameraConfig::default())
+        .with(Camera::default())
         .spawn(SpriteBundle {
-            material: white_material,
-            sprite: Sprite::new(Vec2::new(100.0, 100.0)),
+            material: materials.add(Color::rgb(1.0, 1.0, 1.0).into()),
+            sprite: Sprite::new(Vec2::new(1.0, 1.0)),
             ..Default::default()
         });
+}
+
+#[derive(Default)]
+struct Config {
+    camera: CameraConfig,
 }
 
 struct CameraConfig {
@@ -30,23 +36,38 @@ struct CameraConfig {
     zoom_step: f32,
 }
 
+struct Camera {
+    pan: Vec2,
+    zoom: f32,
+}
+
 impl Default for CameraConfig {
     fn default() -> Self {
         Self {
-            pan_speed: 500.0,
+            pan_speed: 30.0,
             zoom_step: 0.05,
         }
     }
 }
 
+impl Default for Camera {
+    fn default() -> Self {
+        Self {
+            pan: Vec2::zero(),
+            zoom: 1.0,
+        }
+    }
+}
+
 fn camera_movement(
+    config: Res<Config>,
     time: Res<Time>,
     keyboard_input: Res<Input<KeyCode>>,
     mouse_wheel_events: Res<Events<MouseWheel>>,
     mut mouse_wheel_reader: Local<EventReader<MouseWheel>>,
-    mut query: Query<(&CameraConfig, &mut Transform)>,
+    mut query: Query<(&mut Camera, &mut Transform)>,
 ) {
-    let mut pan_direction = Vec3::zero();
+    let mut pan_direction = Vec2::zero();
     if keyboard_input.pressed(KeyCode::W) {
         pan_direction.y += 1.0;
     }
@@ -59,9 +80,9 @@ fn camera_movement(
     if keyboard_input.pressed(KeyCode::A) {
         pan_direction.x -= 1.0;
     }
+    let pan_amount = pan_direction * config.camera.pan_speed * time.delta_seconds();
 
     let mut zoom_amount = 0;
-
     for ev in mouse_wheel_reader.iter(&mouse_wheel_events) {
         let MouseWheel { y, .. } = *ev;
         if y > 0.0 {
@@ -70,14 +91,18 @@ fn camera_movement(
             zoom_amount -= 1;
         }
     }
+    let zoom_factor = (1.0 + config.camera.zoom_step).powi(zoom_amount);
 
-    for (config, mut transform) in query.iter_mut() {
-        let zoom_factor = (1.0 + config.zoom_step).powi(zoom_amount);
-        transform.scale.x /= zoom_factor;
-        transform.scale.y /= zoom_factor;
+    for (mut camera, mut transform) in query.iter_mut() {
+        camera.zoom *= zoom_factor;
+        let local_pan_amount = pan_amount / camera.zoom;
+        camera.pan += local_pan_amount;
 
-        let pan_amount = transform.scale * pan_direction * config.pan_speed * time.delta_seconds();
-        transform.translation += pan_amount;
+        *transform = Transform {
+            translation: camera.pan.extend(0.0),
+            scale: Vec2::splat(1.0 / (camera.zoom * TILE_PIXELS)).extend(1.0),
+            ..Default::default()
+        }
     }
 }
 
