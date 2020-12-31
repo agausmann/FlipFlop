@@ -4,6 +4,7 @@ use std::collections::HashSet;
 fn main() {
     App::build()
         .add_plugins(DefaultPlugins)
+        .add_resource(TickTimer(Timer::from_seconds(0.01, true)))
         .add_system(tick.system())
         .run();
 }
@@ -16,7 +17,7 @@ struct Wire {
 }
 
 struct FlipFlop {
-    inputs: HashSet<Entity>,
+    input: Entity,
     flip: bool,
     output: bool,
 }
@@ -32,11 +33,7 @@ fn tick(
     }
 
     for mut ff in flipflops.iter_mut() {
-        ff.output = ff.flip
-            ^ ff.inputs
-                .iter()
-                .map(|&entity| wires.get_mut(entity).unwrap().state)
-                .fold(false, |acc, state| acc | state);
+        ff.output = ff.flip ^ wires.get_mut(ff.input).unwrap().state
     }
 
     for mut wire in wires.iter_mut() {
