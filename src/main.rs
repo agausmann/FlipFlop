@@ -71,7 +71,6 @@ fn configure_textures(
             AssetEvent::Created { handle } => {
                 if *handle == game_assets.board_texture {
                     let texture = textures.get_mut(handle).unwrap();
-                    println!("flipflop {:p}", texture);
                     texture.sampler.address_mode_u = AddressMode::Repeat;
                     texture.sampler.address_mode_v = AddressMode::Repeat;
                 }
