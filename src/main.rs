@@ -1,13 +1,20 @@
+mod uv_sprite;
+
+use self::uv_sprite::{UvRect, UvSpriteBundle, UvSpritePlugin};
 use bevy::input::mouse::MouseWheel;
 use bevy::prelude::*;
+use bevy::render::texture::AddressMode;
 use std::collections::HashSet;
 
 fn main() {
     App::build()
         .add_plugins(DefaultPlugins)
+        .add_plugin(UvSpritePlugin)
         .add_resource(TickTimer(Timer::from_seconds(0.01, true)))
         .add_resource(Config::default())
+        .add_resource(GameAssets::default())
         .add_startup_system(setup.system())
+        .add_system(configure_textures.system()) // TODO stop running when done
         .add_system(camera_movement.system())
         .add_system(tick.system())
         .run();
@@ -15,16 +22,71 @@ fn main() {
 
 const TILE_PIXELS: f32 = 16.0;
 
-fn setup(commands: &mut Commands, mut materials: ResMut<Assets<ColorMaterial>>) {
+fn setup(
+    commands: &mut Commands,
+    mut game_assets: ResMut<GameAssets>,
+    asset_server: Res<AssetServer>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+) {
     commands
         .spawn(Camera2dBundle::default())
-        .with(Camera::default())
-        .spawn(SpriteBundle {
-            material: materials.add(Color::rgb(1.0, 1.0, 1.0).into()),
-            sprite: Sprite::new(Vec2::new(1.0, 1.0)),
+        .with(Camera::default());
+
+    commands.spawn(CameraUiBundle::default());
+
+    game_assets.board_texture = asset_server.load("board.png");
+
+    commands
+        .spawn(UvSpriteBundle {
+            sprite: Sprite::new(Vec2::new(2.0, 2.0)),
+            uv_rect: UvRect {
+                min: Vec2::zero(),
+                max: Vec2::splat(2.0),
+            },
+            material: materials.add(ColorMaterial::modulated_texture(
+                game_assets.board_texture.clone(),
+                Color::rgb(0.5, 0.5, 0.5),
+            )),
             ..Default::default()
-        });
+        })
+        .with(Background);
+
+    /*
+    commands.spawn(SpriteBundle {
+        material: materials.add(Color::rgb(1.0, 1.0, 1.0).into()),
+        sprite: Sprite::new(Vec2::new(1.0, 1.0)),
+        ..Default::default()
+    });
+    */
 }
+
+fn configure_textures(
+    mut textures: ResMut<Assets<Texture>>,
+    game_assets: Res<GameAssets>,
+    events: Res<Events<AssetEvent<Texture>>>,
+    mut reader: Local<EventReader<AssetEvent<Texture>>>,
+) {
+    for ev in reader.iter(&events) {
+        match ev {
+            AssetEvent::Created { handle } => {
+                if *handle == game_assets.board_texture {
+                    let texture = textures.get_mut(handle).unwrap();
+                    println!("flipflop {:p}", texture);
+                    texture.sampler.address_mode_u = AddressMode::Repeat;
+                    texture.sampler.address_mode_v = AddressMode::Repeat;
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+#[derive(Default)]
+struct GameAssets {
+    board_texture: Handle<Texture>,
+}
+
+struct Background;
 
 #[derive(Default)]
 struct Config {
