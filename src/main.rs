@@ -13,51 +13,27 @@ fn main() {
         .add_resource(TickTimer(Timer::from_seconds(0.01, true)))
         .add_resource(Config::default())
         .add_resource(GameAssets::default())
-        .add_startup_system(setup.system())
-        .add_system(configure_textures.system()) // TODO stop running when done
-        .add_system(camera_movement.system())
-        .add_system(tick.system())
+        .add_resource(State::new(AppState::Loading))
+        .add_stage_after(stage::UPDATE, STAGE, StateStage::<AppState>::default())
+        .on_state_enter(STAGE, AppState::Loading, load_assets.system())
+        .on_state_update(STAGE, AppState::Loading, configure_textures.system())
+        .on_state_enter(STAGE, AppState::InGame, setup_game.system())
+        .on_state_update(STAGE, AppState::InGame, camera_movement.system())
+        .on_state_update(STAGE, AppState::InGame, tick.system())
         .run();
 }
 
 const TILE_PIXELS: f32 = 16.0;
+const STAGE: &str = "app_state";
 
-fn setup(
-    commands: &mut Commands,
-    mut game_assets: ResMut<GameAssets>,
-    asset_server: Res<AssetServer>,
-    mut materials: ResMut<Assets<ColorMaterial>>,
-) {
-    commands
-        .spawn(Camera2dBundle::default())
-        .with(Camera::default());
+#[derive(Clone)]
+enum AppState {
+    Loading,
+    InGame,
+}
 
-    commands.spawn(CameraUiBundle::default());
-
+fn load_assets(mut game_assets: ResMut<GameAssets>, asset_server: Res<AssetServer>) {
     game_assets.board_texture = asset_server.load("board.png");
-
-    commands
-        .spawn(UvSpriteBundle {
-            sprite: Sprite::new(Vec2::new(2.0, 2.0)),
-            uv_rect: UvRect {
-                min: Vec2::zero(),
-                max: Vec2::splat(2.0),
-            },
-            material: materials.add(ColorMaterial::modulated_texture(
-                game_assets.board_texture.clone(),
-                Color::rgb(0.5, 0.5, 0.5),
-            )),
-            ..Default::default()
-        })
-        .with(Background);
-
-    /*
-    commands.spawn(SpriteBundle {
-        material: materials.add(Color::rgb(1.0, 1.0, 1.0).into()),
-        sprite: Sprite::new(Vec2::new(1.0, 1.0)),
-        ..Default::default()
-    });
-    */
 }
 
 fn configure_textures(
@@ -65,6 +41,7 @@ fn configure_textures(
     game_assets: Res<GameAssets>,
     events: Res<Events<AssetEvent<Texture>>>,
     mut reader: Local<EventReader<AssetEvent<Texture>>>,
+    mut state: ResMut<State<AppState>>,
 ) {
     for ev in reader.iter(&events) {
         match ev {
@@ -73,6 +50,7 @@ fn configure_textures(
                     let texture = textures.get_mut(handle).unwrap();
                     texture.sampler.address_mode_u = AddressMode::Repeat;
                     texture.sampler.address_mode_v = AddressMode::Repeat;
+                    state.set_next(AppState::InGame).unwrap(); //TODO more sophisticated loading progress
                 }
             }
             _ => {}
@@ -118,6 +96,33 @@ impl Default for Camera {
             zoom: 1.0,
         }
     }
+}
+
+fn setup_game(
+    commands: &mut Commands,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+    game_assets: Res<GameAssets>,
+) {
+    commands
+        .spawn(Camera2dBundle::default())
+        .with(Camera::default());
+
+    commands.spawn(CameraUiBundle::default());
+
+    commands
+        .spawn(UvSpriteBundle {
+            sprite: Sprite::new(Vec2::new(2.0e3, 2.0e3)),
+            uv_rect: UvRect {
+                min: Vec2::zero(),
+                max: Vec2::splat(2.0e3),
+            },
+            material: materials.add(ColorMaterial::modulated_texture(
+                game_assets.board_texture.clone(),
+                Color::rgb(0.5, 0.5, 0.5),
+            )),
+            ..Default::default()
+        })
+        .with(Background);
 }
 
 fn camera_movement(
