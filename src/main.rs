@@ -18,6 +18,7 @@ fn main() {
         .add_resource(GameAssets::default())
         .add_resource(State::new(AppState::Loading))
         .add_resource(Cursor::default())
+        .add_resource(CameraState::default())
         .add_stage_after(stage::UPDATE, STAGE, StateStage::<AppState>::default())
         .on_state_enter(STAGE, AppState::Loading, load_assets.system())
         .on_state_update(STAGE, AppState::Loading, configure_textures.system())
@@ -69,9 +70,9 @@ struct GameAssets {
     board_texture: Handle<Texture>,
 }
 
-struct DebugText;
-
 struct Board;
+struct CameraControlled;
+struct DebugText;
 
 #[derive(Default)]
 struct Config {
@@ -83,7 +84,7 @@ struct CameraConfig {
     zoom_step: f32,
 }
 
-struct Camera {
+struct CameraState {
     pan: Vec2,
     zoom: f32,
 }
@@ -97,7 +98,7 @@ impl Default for CameraConfig {
     }
 }
 
-impl Default for Camera {
+impl Default for CameraState {
     fn default() -> Self {
         Self {
             pan: Vec2::zero(),
@@ -112,9 +113,19 @@ struct Tile {
     y: i32,
 }
 
+impl From<Vec2> for Tile {
+    fn from(v: Vec2) -> Self {
+        Self {
+            x: v.x.floor() as i32,
+            y: v.y.floor() as i32,
+        }
+    }
+}
+
 #[derive(Default)]
 struct Cursor {
-    pos: Vec2,
+    screen_position: Vec2,
+    position: Vec2,
     tile: Tile,
 }
 
@@ -126,8 +137,7 @@ fn setup_game(
 ) {
     commands
         .spawn(Camera2dBundle::default())
-        .with(Camera::default());
-
+        .with(CameraControlled);
     commands.spawn(CameraUiBundle::default());
 
     commands
@@ -163,7 +173,7 @@ fn setup_game(
 fn debug_text(
     diagnostics: Res<Diagnostics>,
     cursor: Res<Cursor>,
-    camera: Query<&Camera>,
+    camera: Res<CameraState>,
     mut query: Query<&mut Text, With<DebugText>>,
 ) {
     let fps = diagnostics
@@ -175,7 +185,6 @@ fn debug_text(
         .and_then(|diag| diag.average())
         .map(|seconds| seconds * 1000.0)
         .unwrap_or(f64::NAN);
-    let camera = camera.iter().next().unwrap();
     let debug_text = formatdoc!(
         "
             FPS: {:.0}
@@ -192,8 +201,8 @@ fn debug_text(
         camera.pan.x,
         camera.pan.y,
         camera.zoom,
-        cursor.pos.x,
-        cursor.pos.y,
+        cursor.position.x,
+        cursor.position.y,
         cursor.tile.x,
         cursor.tile.y,
     );
@@ -208,8 +217,9 @@ fn camera_movement(
     time: Res<Time>,
     keyboard_input: Res<Input<KeyCode>>,
     mouse_wheel_events: Res<Events<MouseWheel>>,
+    mut camera: ResMut<CameraState>,
     mut mouse_wheel_reader: Local<EventReader<MouseWheel>>,
-    mut query: Query<(&mut Camera, &mut Transform)>,
+    mut query: Query<&mut Transform, With<CameraControlled>>,
 ) {
     let mut pan_direction = Vec2::zero();
     if keyboard_input.pressed(KeyCode::W) {
@@ -224,7 +234,8 @@ fn camera_movement(
     if keyboard_input.pressed(KeyCode::A) {
         pan_direction.x -= 1.0;
     }
-    let pan_amount = pan_direction * config.camera.pan_speed * time.delta_seconds();
+    let pan_amount = pan_direction * config.camera.pan_speed * time.delta_seconds() / camera.zoom;
+    camera.pan += pan_amount;
 
     let mut zoom_amount = 0;
     for ev in mouse_wheel_reader.iter(&mouse_wheel_events) {
@@ -235,27 +246,33 @@ fn camera_movement(
             zoom_amount -= 1;
         }
     }
-    let zoom_factor = (1.0 + config.camera.zoom_step).powi(zoom_amount);
+    camera.zoom *= (1.0 + config.camera.zoom_step).powi(zoom_amount);
 
-    for (mut camera, mut transform) in query.iter_mut() {
-        camera.zoom *= zoom_factor;
-        let local_pan_amount = pan_amount / camera.zoom;
-        camera.pan += local_pan_amount;
+    let new_transform = Transform {
+        translation: camera.pan.extend(0.0),
+        scale: Vec2::splat(1.0 / (camera.zoom * TILE_PIXELS)).extend(1.0),
+        ..Default::default()
+    };
 
-        *transform = Transform {
-            translation: camera.pan.extend(0.0),
-            scale: Vec2::splat(1.0 / (camera.zoom * TILE_PIXELS)).extend(1.0),
-            ..Default::default()
-        }
+    for mut transform in query.iter_mut() {
+        *transform = new_transform;
     }
 }
 
 fn cursor_position(
     events: Res<Events<CursorMoved>>,
+    windows: Res<Windows>,
+    camera: Res<CameraState>,
     mut reader: Local<EventReader<CursorMoved>>,
     mut cursor: ResMut<Cursor>,
 ) {
-    for ev in reader.iter(&events) {}
+    if let Some(ev) = reader.latest(&events) {
+        let window = windows.get_primary().unwrap();
+        let window_size = Vec2::new(window.width(), window.height());
+        cursor.screen_position = ev.position - window_size / 2.0;
+    }
+    cursor.position = cursor.screen_position / TILE_PIXELS / camera.zoom + camera.pan;
+    cursor.tile = cursor.position.into();
 }
 
 struct TickTimer(Timer);
