@@ -179,7 +179,7 @@ struct Wire {
     state: bool,
 }
 
-struct FlipFlop {
+struct Gate {
     input: Entity,
     flip: bool,
     output: bool,
@@ -188,22 +188,22 @@ struct FlipFlop {
 fn tick(
     time: Res<Time>,
     mut timer: ResMut<TickTimer>,
-    mut flipflops: Query<&mut FlipFlop>,
+    mut gates: Query<&mut Gate>,
     mut wires: Query<&mut Wire>,
 ) {
     if !timer.0.tick(time.delta_seconds()).just_finished() {
         return;
     }
 
-    for mut ff in flipflops.iter_mut() {
-        ff.output = ff.flip ^ wires.get_mut(ff.input).unwrap().state
+    for mut gate in gates.iter_mut() {
+        gate.output = gate.flip ^ wires.get_mut(gate.input).unwrap().state
     }
 
     for mut wire in wires.iter_mut() {
         wire.state = wire
             .inputs
             .iter()
-            .map(|&entity| flipflops.get_mut(entity).unwrap().output)
+            .map(|&entity| gates.get_mut(entity).unwrap().output)
             .fold(false, |acc, state| acc | state);
     }
 }
