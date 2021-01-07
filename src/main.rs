@@ -1,25 +1,31 @@
 mod uv_sprite;
 
 use self::uv_sprite::{UvRect, UvSpriteBundle, UvSpritePlugin};
+use bevy::diagnostic::{Diagnostics, FrameTimeDiagnosticsPlugin};
 use bevy::input::mouse::MouseWheel;
 use bevy::prelude::*;
 use bevy::render::texture::AddressMode;
+use indoc::formatdoc;
 use std::collections::HashSet;
 
 fn main() {
     App::build()
         .add_plugins(DefaultPlugins)
+        .add_plugin(FrameTimeDiagnosticsPlugin)
         .add_plugin(UvSpritePlugin)
         .add_resource(TickTimer(Timer::from_seconds(0.01, true)))
         .add_resource(Config::default())
         .add_resource(GameAssets::default())
         .add_resource(State::new(AppState::Loading))
+        .add_resource(Cursor::default())
         .add_stage_after(stage::UPDATE, STAGE, StateStage::<AppState>::default())
         .on_state_enter(STAGE, AppState::Loading, load_assets.system())
         .on_state_update(STAGE, AppState::Loading, configure_textures.system())
         .on_state_enter(STAGE, AppState::InGame, setup_game.system())
         .on_state_update(STAGE, AppState::InGame, camera_movement.system())
+        .on_state_update(STAGE, AppState::InGame, cursor_position.system())
         .on_state_update(STAGE, AppState::InGame, tick.system())
+        .on_state_update(STAGE, AppState::InGame, debug_text.system())
         .run();
 }
 
@@ -63,7 +69,9 @@ struct GameAssets {
     board_texture: Handle<Texture>,
 }
 
-struct Background;
+struct DebugText;
+
+struct Board;
 
 #[derive(Default)]
 struct Config {
@@ -98,8 +106,21 @@ impl Default for Camera {
     }
 }
 
+#[derive(Default)]
+struct Tile {
+    x: i32,
+    y: i32,
+}
+
+#[derive(Default)]
+struct Cursor {
+    pos: Vec2,
+    tile: Tile,
+}
+
 fn setup_game(
     commands: &mut Commands,
+    asset_server: Res<AssetServer>,
     mut materials: ResMut<Assets<ColorMaterial>>,
     game_assets: Res<GameAssets>,
 ) {
@@ -122,7 +143,64 @@ fn setup_game(
             )),
             ..Default::default()
         })
-        .with(Background);
+        .with(Board);
+
+    commands
+        .spawn(TextBundle {
+            style: Style {
+                align_self: AlignSelf::FlexEnd,
+                ..Default::default()
+            },
+            text: Text {
+                font: asset_server.load("fonts/FiraSans-Regular.ttf"),
+                ..Default::default()
+            },
+            ..Default::default()
+        })
+        .with(DebugText);
+}
+
+fn debug_text(
+    diagnostics: Res<Diagnostics>,
+    cursor: Res<Cursor>,
+    camera: Query<&Camera>,
+    mut query: Query<&mut Text, With<DebugText>>,
+) {
+    let fps = diagnostics
+        .get(FrameTimeDiagnosticsPlugin::FPS)
+        .and_then(|diag| diag.average())
+        .unwrap_or(f64::NAN);
+    let frame_time = diagnostics
+        .get(FrameTimeDiagnosticsPlugin::FRAME_TIME)
+        .and_then(|diag| diag.average())
+        .map(|seconds| seconds * 1000.0)
+        .unwrap_or(f64::NAN);
+    let camera = camera.iter().next().unwrap();
+    let debug_text = formatdoc!(
+        "
+            FPS: {:.0}
+            Frame time: {:.3}ms
+
+            Pan x: {:.2} y: {:.2}
+            Zoom: {:.2}
+
+            Cursor x: {:.2} y: {:.2}
+            Tile x: {} y: {}
+        ",
+        fps,
+        frame_time,
+        camera.pan.x,
+        camera.pan.y,
+        camera.zoom,
+        cursor.pos.x,
+        cursor.pos.y,
+        cursor.tile.x,
+        cursor.tile.y,
+    );
+
+    for mut text in query.iter_mut() {
+        text.value = debug_text.clone();
+    }
 }
 
 fn camera_movement(
@@ -170,6 +248,14 @@ fn camera_movement(
             ..Default::default()
         }
     }
+}
+
+fn cursor_position(
+    events: Res<Events<CursorMoved>>,
+    mut reader: Local<EventReader<CursorMoved>>,
+    mut cursor: ResMut<Cursor>,
+) {
+    for ev in reader.iter(&events) {}
 }
 
 struct TickTimer(Timer);
