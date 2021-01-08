@@ -1,12 +1,15 @@
 mod board;
+mod camera;
 mod colored;
+mod config;
 mod uv_sprite;
 
 use self::board::{Board, BoardBundle, BoardPlugin};
+use self::camera::{CameraControlled, CameraPlugin, CameraState};
 use self::colored::{Colored, ColoredPlugin};
+use self::config::Config;
 use self::uv_sprite::UvSpritePlugin;
 use bevy::diagnostic::{Diagnostics, FrameTimeDiagnosticsPlugin};
-use bevy::input::mouse::MouseWheel;
 use bevy::prelude::*;
 use bevy::render::texture::AddressMode;
 use indoc::formatdoc;
@@ -17,6 +20,7 @@ fn main() {
         .add_plugins(DefaultPlugins)
         .add_plugin(FrameTimeDiagnosticsPlugin)
         .add_plugin(BoardPlugin)
+        .add_plugin(CameraPlugin)
         .add_plugin(ColoredPlugin)
         .add_plugin(UvSpritePlugin)
         .add_resource(TickTimer(Timer::from_seconds(0.01, true)))
@@ -29,7 +33,6 @@ fn main() {
         .on_state_enter(STAGE, AppState::Loading, load_assets.system())
         .on_state_update(STAGE, AppState::Loading, configure_textures.system())
         .on_state_enter(STAGE, AppState::InGame, setup_game.system())
-        .on_state_update(STAGE, AppState::InGame, camera_movement.system())
         .on_state_update(STAGE, AppState::InGame, cursor_position.system())
         .on_state_update(STAGE, AppState::InGame, tick.system())
         .on_state_update(STAGE, AppState::InGame, debug_text.system())
@@ -76,45 +79,7 @@ struct GameAssets {
     board_texture: Handle<Texture>,
 }
 
-struct CameraControlled;
 struct DebugText;
-
-#[derive(Default)]
-struct Config {
-    camera: CameraConfig,
-}
-
-struct CameraConfig {
-    pan_speed: f32,
-    zoom_step: f32,
-    min_zoom: f32,
-    max_zoom: f32,
-}
-
-impl Default for CameraConfig {
-    fn default() -> Self {
-        Self {
-            pan_speed: 30.0,
-            zoom_step: 0.05,
-            min_zoom: 0.25,
-            max_zoom: 4.0,
-        }
-    }
-}
-
-struct CameraState {
-    pan: Vec2,
-    zoom: f32,
-}
-
-impl Default for CameraState {
-    fn default() -> Self {
-        Self {
-            pan: Vec2::zero(),
-            zoom: 1.0,
-        }
-    }
-}
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Tile {
@@ -221,57 +186,6 @@ fn debug_text(
 
     for mut text in query.iter_mut() {
         text.value = debug_text.clone();
-    }
-}
-
-fn camera_movement(
-    config: Res<Config>,
-    time: Res<Time>,
-    keyboard_input: Res<Input<KeyCode>>,
-    mouse_wheel_events: Res<Events<MouseWheel>>,
-    mut camera: ResMut<CameraState>,
-    mut mouse_wheel_reader: Local<EventReader<MouseWheel>>,
-    mut query: Query<&mut Transform, With<CameraControlled>>,
-) {
-    let mut pan_direction = Vec2::zero();
-    if keyboard_input.pressed(KeyCode::W) {
-        pan_direction.y += 1.0;
-    }
-    if keyboard_input.pressed(KeyCode::S) {
-        pan_direction.y -= 1.0;
-    }
-    if keyboard_input.pressed(KeyCode::D) {
-        pan_direction.x += 1.0;
-    }
-    if keyboard_input.pressed(KeyCode::A) {
-        pan_direction.x -= 1.0;
-    }
-    let pan_amount = pan_direction * config.camera.pan_speed * time.delta_seconds() / camera.zoom;
-    camera.pan += pan_amount;
-
-    let mut zoom_amount = 0;
-    for ev in mouse_wheel_reader.iter(&mouse_wheel_events) {
-        let MouseWheel { y, .. } = *ev;
-        if y > 0.0 {
-            zoom_amount += 1;
-        } else if y < 0.0 {
-            zoom_amount -= 1;
-        }
-    }
-    camera.zoom *= (1.0 + config.camera.zoom_step).powi(zoom_amount);
-    camera.zoom = camera
-        .zoom
-        .min(config.camera.max_zoom)
-        .max(config.camera.min_zoom);
-
-    let new_transform = Transform {
-        translation: camera.pan.extend(0.0),
-        scale: Vec2::splat(1.0 / (camera.zoom * TILE_PIXELS)).extend(1.0),
-        ..Default::default()
-    };
-
-    for mut transform in query.iter_mut() {
-        *transform = new_transform;
     }
 }
 
