@@ -87,11 +87,8 @@ struct Config {
 struct CameraConfig {
     pan_speed: f32,
     zoom_step: f32,
-}
-
-struct CameraState {
-    pan: Vec2,
-    zoom: f32,
+    min_zoom: f32,
+    max_zoom: f32,
 }
 
 impl Default for CameraConfig {
@@ -99,8 +96,15 @@ impl Default for CameraConfig {
         Self {
             pan_speed: 30.0,
             zoom_step: 0.05,
+            min_zoom: 0.25,
+            max_zoom: 4.0,
         }
     }
+}
+
+struct CameraState {
+    pan: Vec2,
+    zoom: f32,
 }
 
 impl Default for CameraState {
@@ -255,6 +259,10 @@ fn camera_movement(
         }
     }
     camera.zoom *= (1.0 + config.camera.zoom_step).powi(zoom_amount);
+    camera.zoom = camera
+        .zoom
+        .min(config.camera.max_zoom)
+        .max(config.camera.min_zoom);
 
     let new_transform = Transform {
         translation: camera.pan.extend(0.0),
