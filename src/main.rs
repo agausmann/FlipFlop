@@ -1,6 +1,10 @@
+mod board;
+mod colored;
 mod uv_sprite;
 
-use self::uv_sprite::{UvRect, UvSpriteBundle, UvSpritePlugin};
+use self::board::{Board, BoardBundle, BoardPlugin};
+use self::colored::{Colored, ColoredPlugin};
+use self::uv_sprite::UvSpritePlugin;
 use bevy::diagnostic::{Diagnostics, FrameTimeDiagnosticsPlugin};
 use bevy::input::mouse::MouseWheel;
 use bevy::prelude::*;
@@ -12,6 +16,8 @@ fn main() {
     App::build()
         .add_plugins(DefaultPlugins)
         .add_plugin(FrameTimeDiagnosticsPlugin)
+        .add_plugin(BoardPlugin)
+        .add_plugin(ColoredPlugin)
         .add_plugin(UvSpritePlugin)
         .add_resource(TickTimer(Timer::from_seconds(0.01, true)))
         .add_resource(Config::default())
@@ -70,7 +76,6 @@ struct GameAssets {
     board_texture: Handle<Texture>,
 }
 
-struct Board;
 struct CameraControlled;
 struct DebugText;
 
@@ -107,10 +112,16 @@ impl Default for CameraState {
     }
 }
 
-#[derive(Default)]
-struct Tile {
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Tile {
     x: i32,
     y: i32,
+}
+
+impl Tile {
+    pub fn new(x: i32, y: i32) -> Self {
+        Self { x, y }
+    }
 }
 
 impl From<Vec2> for Tile {
@@ -122,6 +133,12 @@ impl From<Vec2> for Tile {
     }
 }
 
+impl From<Tile> for Vec2 {
+    fn from(tile: Tile) -> Self {
+        Self::new(tile.x as f32, tile.y as f32)
+    }
+}
+
 #[derive(Default)]
 struct Cursor {
     screen_position: Vec2,
@@ -129,31 +146,22 @@ struct Cursor {
     tile: Tile,
 }
 
-fn setup_game(
-    commands: &mut Commands,
-    asset_server: Res<AssetServer>,
-    mut materials: ResMut<Assets<ColorMaterial>>,
-    game_assets: Res<GameAssets>,
-) {
+fn setup_game(commands: &mut Commands, asset_server: Res<AssetServer>) {
     commands
         .spawn(Camera2dBundle::default())
         .with(CameraControlled);
     commands.spawn(CameraUiBundle::default());
 
-    commands
-        .spawn(UvSpriteBundle {
-            sprite: Sprite::new(Vec2::new(2.0e3, 2.0e3)),
-            uv_rect: UvRect {
-                min: Vec2::zero(),
-                max: Vec2::splat(2.0e3),
-            },
-            material: materials.add(ColorMaterial::modulated_texture(
-                game_assets.board_texture.clone(),
-                Color::rgb(0.5, 0.5, 0.5),
-            )),
+    commands.spawn(BoardBundle {
+        board: Board {
+            start: Tile::new(-1000, -1000),
+            end: Tile::new(1000, 1000),
             ..Default::default()
-        })
-        .with(Board);
+        },
+        colored: Colored {
+            color: Color::rgb(0.5, 0.5, 0.5),
+        },
+    });
 
     commands
         .spawn(TextBundle {
