@@ -7,8 +7,8 @@ pub struct BoardPlugin;
 
 impl Plugin for BoardPlugin {
     fn build(&self, app: &mut AppBuilder) {
-        app.add_system(board_update.system())
-            .add_system(attach_sprite.system());
+        app.add_system_to_stage(crate::RENDER_SETUP, board_update.system())
+            .add_system_to_stage(crate::RENDER_SETUP, attach_sprite.system());
     }
 }
 
@@ -30,7 +30,7 @@ impl Board {
         let start: Vec2 = self.start.into();
         let end: Vec2 = self.end.into();
 
-        ((start + end) / 2.0).extend(self.z)
+        ((start + end + Vec2::splat(1.0)) / 2.0).extend(self.z)
     }
 
     fn size(&self) -> Vec2 {
@@ -39,26 +39,38 @@ impl Board {
 
         (end - start).abs() + Vec2::splat(1.0)
     }
+
+    fn uv(&self) -> UvRect {
+        UvRect {
+            min: Vec2::zero(),
+            max: self.size(),
+        }
+    }
+
+    fn transform(&self) -> Transform {
+        Transform {
+            translation: self.position(),
+            ..Default::default()
+        }
+    }
 }
 
 fn attach_sprite(
     commands: &mut Commands,
     game_assets: Res<GameAssets>,
     mut materials: ResMut<Assets<ColorMaterial>>,
-    query: Query<(Entity, &Board, &Colored), Without<Sprite>>,
+    query: Query<(Entity, &Board, &Colored), Added<Board>>,
 ) {
     for (entity, board, colored) in query.iter() {
         commands.set_current_entity(entity);
         commands.with_bundle(UvSpriteBundle {
             sprite: Sprite::new(board.size()),
-            uv_rect: UvRect {
-                min: Vec2::zero(),
-                max: board.size(),
-            },
+            uv_rect: board.uv(),
             material: materials.add(ColorMaterial::modulated_texture(
                 game_assets.board_texture.clone(),
                 colored.color,
             )),
+            transform: board.transform(),
             ..Default::default()
         });
     }
@@ -69,14 +81,7 @@ fn board_update(
 ) {
     for (board, mut sprite, mut uv_rect, mut transform) in query.iter_mut() {
         sprite.size = board.size();
-
-        uv_rect.min = Vec2::zero();
-        uv_rect.max = board.size();
-
-        *transform = Transform {
-            translation: board.position(),
-            scale: board.size().extend(1.0),
-            ..Default::default()
-        }
+        *uv_rect = board.uv();
+        *transform = board.transform();
     }
 }

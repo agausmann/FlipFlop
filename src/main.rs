@@ -2,45 +2,56 @@ mod board;
 mod camera;
 mod colored;
 mod config;
+mod direction;
 mod uv_sprite;
+mod wire;
+mod wire_colored;
 
 use self::board::{Board, BoardBundle, BoardPlugin};
 use self::camera::{CameraControlled, CameraPlugin, CameraState};
 use self::colored::{Colored, ColoredPlugin};
 use self::config::Config;
+use self::direction::Direction;
 use self::uv_sprite::UvSpritePlugin;
+use self::wire::{Wire, WirePlugin};
+use self::wire_colored::WireColoredPlugin;
 use bevy::diagnostic::{Diagnostics, FrameTimeDiagnosticsPlugin};
 use bevy::prelude::*;
 use bevy::render::texture::AddressMode;
 use indoc::formatdoc;
-use std::collections::HashSet;
+
+const TILE_PIXELS: f32 = 16.0;
+
+//TODO come up with better names / more explicit sequencing for systems
+const RENDER_SETUP: &str = "render_setup";
+const PRE_RENDER_SETUP: &str = "pre_render_setup";
+const APP_STATE: &str = "app_state";
 
 fn main() {
     App::build()
         .add_plugins(DefaultPlugins)
+        .add_stage_before(stage::POST_UPDATE, RENDER_SETUP, SystemStage::parallel())
+        .add_stage_before(RENDER_SETUP, PRE_RENDER_SETUP, SystemStage::parallel())
         .add_plugin(FrameTimeDiagnosticsPlugin)
         .add_plugin(BoardPlugin)
         .add_plugin(CameraPlugin)
         .add_plugin(ColoredPlugin)
         .add_plugin(UvSpritePlugin)
-        .add_resource(TickTimer(Timer::from_seconds(0.01, true)))
+        .add_plugin(WirePlugin)
+        .add_plugin(WireColoredPlugin)
         .add_resource(Config::default())
         .add_resource(GameAssets::default())
         .add_resource(State::new(AppState::Loading))
         .add_resource(Cursor::default())
         .add_resource(CameraState::default())
-        .add_stage_after(stage::UPDATE, STAGE, StateStage::<AppState>::default())
-        .on_state_enter(STAGE, AppState::Loading, load_assets.system())
-        .on_state_update(STAGE, AppState::Loading, configure_textures.system())
-        .on_state_enter(STAGE, AppState::InGame, setup_game.system())
-        .on_state_update(STAGE, AppState::InGame, cursor_position.system())
-        .on_state_update(STAGE, AppState::InGame, tick.system())
-        .on_state_update(STAGE, AppState::InGame, debug_text.system())
+        .add_stage_after(stage::UPDATE, APP_STATE, StateStage::<AppState>::default())
+        .on_state_enter(APP_STATE, AppState::Loading, load_assets.system())
+        .on_state_update(APP_STATE, AppState::Loading, configure_textures.system())
+        .on_state_enter(APP_STATE, AppState::InGame, setup_game.system())
+        .on_state_update(APP_STATE, AppState::InGame, cursor_position.system())
+        .on_state_update(APP_STATE, AppState::InGame, debug_text.system())
         .run();
 }
-
-const TILE_PIXELS: f32 = 16.0;
-const STAGE: &str = "app_state";
 
 #[derive(Clone)]
 enum AppState {
@@ -125,6 +136,7 @@ fn setup_game(commands: &mut Commands, asset_server: Res<AssetServer>) {
         board: Board {
             start: Tile::new(-1000, -1000),
             end: Tile::new(1000, 1000),
+            z: -0.5,
             ..Default::default()
         },
         colored: Colored {
@@ -145,6 +157,13 @@ fn setup_game(commands: &mut Commands, asset_server: Res<AssetServer>) {
             ..Default::default()
         })
         .with(DebugText);
+
+    commands.spawn((Wire {
+        start: Tile::new(1, 1),
+        direction: Direction::Down,
+        length: 3,
+        z: 0.0,
+    },));
 }
 
 fn debug_text(
@@ -205,6 +224,7 @@ fn cursor_position(
     cursor.tile = cursor.position.into();
 }
 
+/*
 struct TickTimer(Timer);
 
 struct Wire {
@@ -240,3 +260,4 @@ fn tick(
             .fold(false, |acc, state| acc | state);
     }
 }
+*/
