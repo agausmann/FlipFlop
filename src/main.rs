@@ -1,17 +1,23 @@
+mod assets;
 mod board;
 mod camera;
 mod colored;
 mod config;
 mod direction;
+mod pin;
+mod simulation;
 mod uv_sprite;
 mod wire;
 mod wire_colored;
 
+use self::assets::GameAssets;
 use self::board::{Board, BoardBundle, BoardPlugin};
 use self::camera::{CameraControlled, CameraPlugin, CameraState};
 use self::colored::{Colored, ColoredPlugin};
 use self::config::Config;
 use self::direction::Direction;
+use self::pin::{Pin, PinPlugin};
+use self::simulation::SimulationPlugin;
 use self::uv_sprite::UvSpritePlugin;
 use self::wire::{Wire, WirePlugin};
 use self::wire_colored::WireColoredPlugin;
@@ -36,31 +42,49 @@ fn main() {
         .add_plugin(BoardPlugin)
         .add_plugin(CameraPlugin)
         .add_plugin(ColoredPlugin)
+        .add_plugin(PinPlugin)
+        .add_plugin(SimulationPlugin)
         .add_plugin(UvSpritePlugin)
         .add_plugin(WirePlugin)
         .add_plugin(WireColoredPlugin)
         .add_resource(Config::default())
-        .add_resource(GameAssets::default())
+        .init_resource::<GameAssets>()
         .add_resource(State::new(AppState::Loading))
         .add_resource(Cursor::default())
         .add_resource(CameraState::default())
         .add_stage_after(stage::UPDATE, APP_STATE, StateStage::<AppState>::default())
-        .on_state_enter(APP_STATE, AppState::Loading, load_assets.system())
         .on_state_update(APP_STATE, AppState::Loading, configure_textures.system())
         .on_state_enter(APP_STATE, AppState::InGame, setup_game.system())
         .on_state_update(APP_STATE, AppState::InGame, cursor_position.system())
         .on_state_update(APP_STATE, AppState::InGame, debug_text.system())
+        .add_system(foo.system())
         .run();
+}
+
+use self::wire_colored::WireColored;
+use bevy::input::keyboard::KeyboardInput;
+use bevy::input::ElementState;
+fn foo(
+    events: Res<Events<KeyboardInput>>,
+    mut reader: Local<EventReader<KeyboardInput>>,
+    mut query: Query<&mut WireColored>,
+) {
+    for ev in reader.iter(&events) {
+        match (ev.key_code, ev.state) {
+            (Some(KeyCode::J), ElementState::Pressed) => {
+                for mut wire_colored in query.iter_mut() {
+                    wire_colored.is_on = !wire_colored.is_on;
+                }
+            }
+            _ => {}
+        }
+    }
 }
 
 #[derive(Clone)]
 enum AppState {
     Loading,
     InGame,
-}
-
-fn load_assets(mut game_assets: ResMut<GameAssets>, asset_server: Res<AssetServer>) {
-    game_assets.board_texture = asset_server.load("board.png");
 }
 
 fn configure_textures(
@@ -85,11 +109,6 @@ fn configure_textures(
     }
 }
 
-#[derive(Default)]
-struct GameAssets {
-    board_texture: Handle<Texture>,
-}
-
 struct DebugText;
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -101,6 +120,10 @@ pub struct Tile {
 impl Tile {
     pub fn new(x: i32, y: i32) -> Self {
         Self { x, y }
+    }
+
+    pub fn zero() -> Self {
+        Self::new(0, 0)
     }
 }
 
@@ -126,7 +149,7 @@ struct Cursor {
     tile: Tile,
 }
 
-fn setup_game(commands: &mut Commands, asset_server: Res<AssetServer>) {
+fn setup_game(commands: &mut Commands, assets: Res<GameAssets>) {
     commands
         .spawn(Camera2dBundle::default())
         .with(CameraControlled);
@@ -151,7 +174,7 @@ fn setup_game(commands: &mut Commands, asset_server: Res<AssetServer>) {
                 ..Default::default()
             },
             text: Text {
-                font: asset_server.load("fonts/FiraSans-Regular.ttf"),
+                font: assets.regular_font.clone(),
                 ..Default::default()
             },
             ..Default::default()
@@ -162,6 +185,14 @@ fn setup_game(commands: &mut Commands, asset_server: Res<AssetServer>) {
         start: Tile::new(1, 1),
         direction: Direction::Down,
         length: 3,
+        z: 0.0,
+    },));
+    commands.spawn((Pin {
+        position: Tile::new(1, 1),
+        z: 0.0,
+    },));
+    commands.spawn((Pin {
+        position: Tile::new(1, -2),
         z: 0.0,
     },));
 }
@@ -223,41 +254,3 @@ fn cursor_position(
     cursor.position = cursor.screen_position / TILE_PIXELS / camera.zoom + camera.pan;
     cursor.tile = cursor.position.into();
 }
-
-/*
-struct TickTimer(Timer);
-
-struct Wire {
-    inputs: HashSet<Entity>,
-    state: bool,
-}
-
-struct Gate {
-    input: Entity,
-    flip: bool,
-    output: bool,
-}
-
-fn tick(
-    time: Res<Time>,
-    mut timer: ResMut<TickTimer>,
-    mut gates: Query<&mut Gate>,
-    mut wires: Query<&mut Wire>,
-) {
-    if !timer.0.tick(time.delta_seconds()).just_finished() {
-        return;
-    }
-
-    for mut gate in gates.iter_mut() {
-        gate.output = gate.flip ^ wires.get_mut(gate.input).unwrap().state
-    }
-
-    for mut wire in wires.iter_mut() {
-        wire.state = wire
-            .inputs
-            .iter()
-            .map(|&entity| gates.get_mut(entity).unwrap().output)
-            .fold(false, |acc, state| acc | state);
-    }
-}
-*/
