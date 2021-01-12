@@ -1,6 +1,7 @@
+use crate::assets::GameAssets;
 use crate::colored::Colored;
+use crate::tile::Tile;
 use crate::uv_sprite::{UvRect, UvSpriteBundle};
-use crate::{GameAssets, Tile};
 use bevy::prelude::*;
 
 pub struct BoardPlugin;

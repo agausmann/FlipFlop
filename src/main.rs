@@ -6,8 +6,10 @@ mod config;
 mod cursor;
 mod debug_text;
 mod direction;
+mod editor;
 mod pin;
 mod simulation;
+mod tile;
 mod uv_sprite;
 mod wire;
 mod wire_colored;
@@ -20,8 +22,10 @@ use self::config::Config;
 use self::cursor::CursorPlugin;
 use self::debug_text::{DebugText, DebugTextPlugin};
 use self::direction::Direction;
+use self::editor::EditorPlugin;
 use self::pin::{Pin, PinPlugin};
 use self::simulation::SimulationPlugin;
+use self::tile::Tile;
 use self::uv_sprite::UvSpritePlugin;
 use self::wire::{Wire, WirePlugin};
 use self::wire_colored::WireColoredPlugin;
@@ -47,6 +51,7 @@ fn main() {
         .add_plugin(ColoredPlugin)
         .add_plugin(CursorPlugin)
         .add_plugin(DebugTextPlugin)
+        .add_plugin(EditorPlugin)
         .add_plugin(PinPlugin)
         .add_plugin(SimulationPlugin)
         .add_plugin(UvSpritePlugin)
@@ -105,37 +110,6 @@ fn configure_textures(
             }
             _ => {}
         }
-    }
-}
-
-#[derive(Debug, Clone, Copy, Default)]
-pub struct Tile {
-    x: i32,
-    y: i32,
-}
-
-impl Tile {
-    pub fn new(x: i32, y: i32) -> Self {
-        Self { x, y }
-    }
-
-    pub fn zero() -> Self {
-        Self::new(0, 0)
-    }
-}
-
-impl From<Vec2> for Tile {
-    fn from(v: Vec2) -> Self {
-        Self {
-            x: v.x.floor() as i32,
-            y: v.y.floor() as i32,
-        }
-    }
-}
-
-impl From<Tile> for Vec2 {
-    fn from(tile: Tile) -> Self {
-        Self::new(tile.x as f32, tile.y as f32)
     }
 }
 

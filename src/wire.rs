@@ -68,8 +68,9 @@ fn attach_sprite(
     }
 }
 
-fn update_wire(mut query: Query<(&Wire, &mut Transform), Changed<Wire>>) {
-    for (wire, mut transform) in query.iter_mut() {
+fn update_wire(mut query: Query<(&Wire, &mut Sprite, &mut Transform), Changed<Wire>>) {
+    for (wire, mut sprite, mut transform) in query.iter_mut() {
+        sprite.size = wire.size();
         *transform = wire.transform();
     }
 }

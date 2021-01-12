@@ -27,6 +27,22 @@ impl Direction {
             Self::Down => -Vec2::unit_y(),
         }
     }
+
+    pub fn nearest(vec: Vec2) -> Self {
+        if vec.x.abs() >= vec.y.abs() {
+            if vec.x >= 0.0 {
+                Self::Right
+            } else {
+                Self::Left
+            }
+        } else {
+            if vec.y >= 0.0 {
+                Self::Up
+            } else {
+                Self::Down
+            }
+        }
+    }
 }
 
 impl From<Direction> for Vec2 {

@@ -1,5 +1,6 @@
 use crate::camera::CameraState;
-use crate::{AppState, Tile, APP_STATE, TILE_PIXELS};
+use crate::tile::Tile;
+use crate::{AppState, APP_STATE, TILE_PIXELS};
 use bevy::prelude::*;
 
 pub struct CursorPlugin;
@@ -19,6 +20,7 @@ pub struct Cursor {
     pub screen_position: Vec2,
     pub position: Vec2,
     pub tile: Tile,
+    pub clicked: Option<Tile>,
 }
 
 fn cursor_position(

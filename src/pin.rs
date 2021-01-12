@@ -1,6 +1,6 @@
+use crate::assets::GameAssets;
+use crate::tile::Tile;
 use crate::wire_colored::WireColored;
-use crate::GameAssets;
-use crate::Tile;
 use bevy::prelude::*;
 
 pub struct PinPlugin;
