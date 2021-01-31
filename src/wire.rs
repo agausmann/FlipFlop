@@ -1,6 +1,6 @@
 use crate::direction::Direction;
+use crate::ivec::Vec2i;
 use crate::wire_colored::WireColored;
-use crate::Tile;
 use bevy::prelude::*;
 
 const WIRE_WIDTH: f32 = 0.125;
@@ -16,7 +16,7 @@ impl Plugin for WirePlugin {
 
 #[derive(Debug, Clone)]
 pub struct Wire {
-    pub start: Tile,
+    pub start: Vec2i,
     pub direction: Direction,
     pub length: i32,
     pub z: f32,
@@ -37,12 +37,26 @@ impl Wire {
             ..Default::default()
         }
     }
+
+    pub fn nth_tile(&self, index: i32) -> Vec2i {
+        self.start + self.direction.int_vector() * index
+    }
+
+    pub fn tile_index(&self, tile: Vec2i) -> i32 {
+        let delta = tile - self.start;
+        let projected = delta * self.direction.int_vector();
+        projected.x + projected.y
+    }
+
+    pub fn end(&self) -> Vec2i {
+        self.start + self.direction.int_vector() * self.length
+    }
 }
 
 impl Default for Wire {
     fn default() -> Self {
         Self {
-            start: Tile::new(0, 0),
+            start: Vec2i::zero(),
             direction: Direction::Right,
             length: 1,
             z: 0.0,

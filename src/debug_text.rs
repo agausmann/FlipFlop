@@ -1,4 +1,5 @@
 use crate::camera::CameraState;
+use crate::circuit::Circuit;
 use crate::cursor::Cursor;
 use bevy::diagnostic::{Diagnostics, FrameTimeDiagnosticsPlugin};
 use bevy::prelude::*;
@@ -19,6 +20,7 @@ fn debug_text(
     diagnostics: Res<Diagnostics>,
     cursor: Res<Cursor>,
     camera: Res<CameraState>,
+    circuit: Res<Circuit>,
     mut query: Query<&mut Text, With<DebugText>>,
 ) {
     let fps = diagnostics
@@ -30,6 +32,11 @@ fn debug_text(
         .and_then(|diag| diag.average())
         .map(|seconds| seconds * 1000.0)
         .unwrap_or(f64::NAN);
+    let wire_connectivity = circuit
+        .tile_wires
+        .get(&cursor.tile)
+        .cloned()
+        .unwrap_or(Default::default());
     let debug_text = formatdoc!(
         "
             FPS: {:.0}
@@ -40,6 +47,12 @@ fn debug_text(
 
             Cursor x: {:.2} y: {:.2}
             Tile x: {} y: {}
+
+            Has pin: {}
+            Wire up: {}
+            Wire down: {}
+            Wire right: {}
+            Wire left: {}
         ",
         fps,
         frame_time,
@@ -50,6 +63,11 @@ fn debug_text(
         cursor.position.y,
         cursor.tile.x,
         cursor.tile.y,
+        circuit.tile_pins.contains(&cursor.tile),
+        wire_connectivity.up.is_some(),
+        wire_connectivity.down.is_some(),
+        wire_connectivity.right.is_some(),
+        wire_connectivity.left.is_some(),
     );
 
     for mut text in query.iter_mut() {

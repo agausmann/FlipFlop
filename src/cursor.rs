@@ -1,5 +1,5 @@
 use crate::camera::CameraState;
-use crate::tile::Tile;
+use crate::ivec::Vec2i;
 use crate::{AppState, APP_STATE, TILE_PIXELS};
 use bevy::prelude::*;
 
@@ -19,8 +19,8 @@ impl Plugin for CursorPlugin {
 pub struct Cursor {
     pub screen_position: Vec2,
     pub position: Vec2,
-    pub tile: Tile,
-    pub clicked: Option<Tile>,
+    pub tile: Vec2i,
+    pub clicked: Option<Vec2i>,
 }
 
 fn cursor_position(
@@ -36,5 +36,5 @@ fn cursor_position(
         cursor.screen_position = ev.position - window_size / 2.0;
     }
     cursor.position = cursor.screen_position / TILE_PIXELS / camera.zoom + camera.pan;
-    cursor.tile = cursor.position.into();
+    cursor.tile = Vec2i::floor(cursor.position);
 }

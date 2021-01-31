@@ -1,6 +1,6 @@
 use crate::assets::GameAssets;
 use crate::colored::Colored;
-use crate::tile::Tile;
+use crate::ivec::Vec2i;
 use crate::uv_sprite::{UvRect, UvSpriteBundle};
 use bevy::prelude::*;
 
@@ -21,8 +21,8 @@ pub struct BoardBundle {
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Board {
-    pub start: Tile,
-    pub end: Tile,
+    pub start: Vec2i,
+    pub end: Vec2i,
     pub z: f32,
 }
 

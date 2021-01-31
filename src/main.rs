@@ -1,15 +1,16 @@
 mod assets;
 mod board;
 mod camera;
+mod circuit;
 mod colored;
 mod config;
 mod cursor;
 mod debug_text;
 mod direction;
 mod editor;
+mod ivec;
 mod pin;
 mod simulation;
-mod tile;
 mod uv_sprite;
 mod wire;
 mod wire_colored;
@@ -17,17 +18,17 @@ mod wire_colored;
 use self::assets::GameAssets;
 use self::board::{Board, BoardBundle, BoardPlugin};
 use self::camera::{CameraControlled, CameraPlugin};
+use self::circuit::Circuit;
 use self::colored::{Colored, ColoredPlugin};
 use self::config::Config;
 use self::cursor::CursorPlugin;
 use self::debug_text::{DebugText, DebugTextPlugin};
-use self::direction::Direction;
 use self::editor::EditorPlugin;
-use self::pin::{Pin, PinPlugin};
+use self::ivec::Vec2i;
+use self::pin::PinPlugin;
 use self::simulation::SimulationPlugin;
-use self::tile::Tile;
 use self::uv_sprite::UvSpritePlugin;
-use self::wire::{Wire, WirePlugin};
+use self::wire::WirePlugin;
 use self::wire_colored::WireColoredPlugin;
 use bevy::prelude::*;
 use bevy::render::texture::AddressMode;
@@ -58,6 +59,7 @@ fn main() {
         .add_plugin(WirePlugin)
         .add_plugin(WireColoredPlugin)
         .add_resource(Config::default())
+        .add_resource(Circuit::default())
         .init_resource::<GameAssets>()
         .on_state_update(APP_STATE, AppState::Loading, configure_textures.system())
         .on_state_enter(APP_STATE, AppState::InGame, setup_game.system())
@@ -121,8 +123,8 @@ fn setup_game(commands: &mut Commands, assets: Res<GameAssets>) {
 
     commands.spawn(BoardBundle {
         board: Board {
-            start: Tile::new(-1000, -1000),
-            end: Tile::new(1000, 1000),
+            start: Vec2i::new(-1000, -1000),
+            end: Vec2i::new(1000, 1000),
             z: -0.5,
             ..Default::default()
         },
@@ -144,19 +146,4 @@ fn setup_game(commands: &mut Commands, assets: Res<GameAssets>) {
             ..Default::default()
         })
         .with(DebugText);
-
-    commands.spawn((Wire {
-        start: Tile::new(1, 1),
-        direction: Direction::Down,
-        length: 3,
-        z: 0.0,
-    },));
-    commands.spawn((Pin {
-        position: Tile::new(1, 1),
-        z: 0.0,
-    },));
-    commands.spawn((Pin {
-        position: Tile::new(1, -2),
-        z: 0.0,
-    },));
 }

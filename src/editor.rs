@@ -1,7 +1,7 @@
+use crate::circuit::Circuit;
 use crate::cursor::Cursor;
 use crate::direction::Direction;
 use crate::pin::Pin;
-use crate::tile::Tile;
 use crate::wire::Wire;
 use bevy::input::mouse::{MouseButton, MouseButtonInput};
 use bevy::input::ElementState;
@@ -31,6 +31,7 @@ enum Editing {
 fn update_editor(
     commands: &mut Commands,
     cursor: Res<Cursor>,
+    mut circuit: ResMut<Circuit>,
     events: Res<Events<MouseButtonInput>>,
     mut reader: Local<EventReader<MouseButtonInput>>,
     mut editor: Local<Editor>,
@@ -41,15 +42,15 @@ fn update_editor(
         Some(Editing::Wire { wire, end, .. }) => {
             let mut wire = wires.get_mut(*wire).expect("missing wire");
             let mut end = pins.get_mut(*end).expect("missing end pin");
-            let cursor_distance = Vec2::from(cursor.tile) - Vec2::from(wire.start);
+            let cursor_distance = cursor.tile - wire.start;
 
             // Set the wire's direction to the one nearest the cursor.
-            wire.direction = Direction::nearest(cursor_distance);
+            wire.direction = Direction::int_nearest(cursor_distance);
             // Preserve the axis in the selected direction, and zero out the other one.
-            let projected_distance = cursor_distance * wire.direction.vector().abs();
+            let projected_distance = cursor_distance * wire.direction.int_vector().abs();
 
-            wire.length = projected_distance.length() as i32;
-            end.position = Tile::from(Vec2::from(wire.start) + projected_distance);
+            wire.length = projected_distance.x.abs() + projected_distance.y.abs();
+            end.position = wire.start + projected_distance;
         }
         None => {}
     }
@@ -79,6 +80,24 @@ fn update_editor(
                 editor.editing = Some(Editing::Wire { wire, start, end });
             }
             (MouseButton::Left, ElementState::Released) => {
+                match &editor.editing {
+                    Some(Editing::Wire { wire, start, end }) => {
+                        let wire_clone = wires.get_mut(*wire).expect("missing wire").clone();
+                        commands.despawn(*wire).despawn(*start).despawn(*end);
+                        if wire_clone.length == 0 {
+                            circuit.add_pin(
+                                Pin {
+                                    position: wire_clone.start,
+                                    ..Default::default()
+                                },
+                                commands,
+                            );
+                        } else {
+                            circuit.add_wire(wire_clone, commands);
+                        }
+                    }
+                    None => {}
+                }
                 editor.editing = None;
             }
             _ => {}

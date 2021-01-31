@@ -1,5 +1,5 @@
 use crate::assets::GameAssets;
-use crate::tile::Tile;
+use crate::ivec::Vec2i;
 use crate::wire_colored::WireColored;
 use bevy::prelude::*;
 
@@ -12,8 +12,9 @@ impl Plugin for PinPlugin {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct Pin {
-    pub position: Tile,
+    pub position: Vec2i,
     pub z: f32,
 }
 
@@ -29,7 +30,7 @@ impl Pin {
 impl Default for Pin {
     fn default() -> Self {
         Self {
-            position: Tile::zero(),
+            position: Vec2i::zero(),
             z: 0.0,
         }
     }
