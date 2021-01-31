@@ -3,21 +3,23 @@ use crate::ivec::Vec2i;
 use crate::pin::Pin;
 use crate::wire::Wire;
 use bevy::prelude::*;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 #[derive(Debug, Default)]
 pub struct Circuit {
-    pub tile_pins: HashSet<Vec2i>,
-    pub wire_endpoints: HashSet<(Vec2i, Vec2i)>,
+    pub tile_pins: HashMap<Vec2i, Entity>,
+    pub wire_endpoints: HashMap<(Vec2i, Vec2i), Entity>,
     pub tile_wires: HashMap<Vec2i, TileWire>,
     pub entity_wires: HashMap<Entity, Wire>,
 }
 
 impl Circuit {
     pub fn add_pin(&mut self, pin: Pin, commands: &mut Commands) {
-        if self.tile_pins.insert(pin.position) {
-            let position = pin.position;
+        let position = pin.position;
+        if !self.tile_pins.contains_key(&position) {
             commands.spawn((pin,));
+            self.tile_pins
+                .insert(position, commands.current_entity().unwrap());
 
             let tile_wires = self.tile_wires.entry(position).or_default().clone();
 
@@ -74,14 +76,31 @@ impl Circuit {
     }
 
     pub fn remove_pin(&mut self, position: Vec2i, commands: &mut Commands) {
-        todo!()
+        if let Some(&entity) = self.tile_pins.get(&position) {
+            commands.despawn_recursive(entity);
+            if let Some(tile_wires) = self.tile_wires.remove(&position) {
+                //TODO opposite wire joining
+                if let Some(entity) = tile_wires.up {
+                    self.remove_wire_ll(entity, commands);
+                }
+                if let Some(entity) = tile_wires.down {
+                    self.remove_wire_ll(entity, commands);
+                }
+                if let Some(entity) = tile_wires.left {
+                    self.remove_wire_ll(entity, commands);
+                }
+                if let Some(entity) = tile_wires.right {
+                    self.remove_wire_ll(entity, commands);
+                }
+            }
+        }
     }
 
     pub fn add_wire(&mut self, wire: Wire, commands: &mut Commands) {
         let mut pins = Vec::new();
         pins.push(0);
         for i in 1..wire.length {
-            if self.tile_pins.contains(&wire.nth_tile(i)) {
+            if self.tile_pins.contains_key(&wire.nth_tile(i)) {
                 pins.push(i);
             }
         }
@@ -91,8 +110,8 @@ impl Circuit {
             let (a, b) = (v[0], v[1]);
             let start = wire.nth_tile(a);
             let end = wire.nth_tile(b);
-            if !self.wire_endpoints.contains(&(start, end))
-                || !self.wire_endpoints.contains(&(end, start))
+            if !self.wire_endpoints.contains_key(&(start, end))
+                || !self.wire_endpoints.contains_key(&(end, start))
             {
                 self.add_wire_ll(
                     Wire {
@@ -108,7 +127,9 @@ impl Circuit {
     }
 
     pub fn remove_wire(&mut self, wire: Wire, commands: &mut Commands) {
-        todo!()
+        if let Some(&entity) = self.wire_endpoints.get(&(wire.start, wire.end())) {
+            self.remove_wire_ll(entity, commands);
+        }
     }
 
     fn add_wire_ll(&mut self, wire: Wire, commands: &mut Commands) {
@@ -126,10 +147,12 @@ impl Circuit {
             },
             commands,
         );
-        self.wire_endpoints.insert((wire.start, wire.end()));
-        self.wire_endpoints.insert((wire.end(), wire.start));
         commands.spawn((wire.clone(),));
         let wire_entity = commands.current_entity().unwrap();
+        self.wire_endpoints
+            .insert((wire.start, wire.end()), wire_entity);
+        self.wire_endpoints
+            .insert((wire.end(), wire.start), wire_entity);
         self.entity_wires.insert(wire_entity, wire.clone());
 
         *self
@@ -155,7 +178,7 @@ impl Circuit {
             .entity_wires
             .remove(&entity)
             .expect("Wire does not exist");
-        commands.despawn(entity);
+        commands.despawn_recursive(entity);
         *self
             .tile_wires
             .get_mut(&wire.start)

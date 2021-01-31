@@ -48,11 +48,11 @@ fn debug_text(
             Cursor x: {:.2} y: {:.2}
             Tile x: {} y: {}
 
-            Has pin: {}
-            Wire up: {}
-            Wire down: {}
-            Wire right: {}
-            Wire left: {}
+            Pin: {:?}
+            Wire up: {:?}
+            Wire down: {:?}
+            Wire right: {:?}
+            Wire left: {:?}
         ",
         fps,
         frame_time,
@@ -63,11 +63,11 @@ fn debug_text(
         cursor.position.y,
         cursor.tile.x,
         cursor.tile.y,
-        circuit.tile_pins.contains(&cursor.tile),
-        wire_connectivity.up.is_some(),
-        wire_connectivity.down.is_some(),
-        wire_connectivity.right.is_some(),
-        wire_connectivity.left.is_some(),
+        circuit.tile_pins.get(&cursor.tile),
+        wire_connectivity.up,
+        wire_connectivity.down,
+        wire_connectivity.right,
+        wire_connectivity.left,
     );
 
     for mut text in query.iter_mut() {
