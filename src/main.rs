@@ -1,149 +1,99 @@
-mod assets;
-mod board;
-mod camera;
-mod circuit;
-mod colored;
-mod config;
-mod cursor;
-mod debug_text;
-mod direction;
-mod editor;
-mod ivec;
-mod pin;
-mod simulation;
-mod uv_sprite;
-mod wire;
-mod wire_colored;
+use anyhow::Context;
+use futures_executor::block_on;
+use winit::event::{Event, WindowEvent};
+use winit::event_loop::ControlFlow;
+use winit::event_loop::EventLoop;
+use winit::window::WindowBuilder;
 
-use self::assets::GameAssets;
-use self::board::{Board, BoardBundle, BoardPlugin};
-use self::camera::{CameraControlled, CameraPlugin};
-use self::circuit::Circuit;
-use self::colored::{Colored, ColoredPlugin};
-use self::config::Config;
-use self::cursor::CursorPlugin;
-use self::debug_text::{DebugText, DebugTextPlugin};
-use self::editor::EditorPlugin;
-use self::ivec::Vec2i;
-use self::pin::PinPlugin;
-use self::simulation::SimulationPlugin;
-use self::uv_sprite::UvSpritePlugin;
-use self::wire::WirePlugin;
-use self::wire_colored::WireColoredPlugin;
-use bevy::prelude::*;
-use bevy::render::texture::AddressMode;
+fn main() -> anyhow::Result<()> {
+    let event_loop = EventLoop::new();
+    let window = WindowBuilder::new()
+        .with_title("FlipFlop")
+        .build(&event_loop)?;
 
-const TILE_PIXELS: f32 = 16.0;
-
-//TODO come up with better names / more explicit sequencing for systems
-const RENDER_SETUP: &str = "render_setup";
-const PRE_RENDER_SETUP: &str = "pre_render_setup";
-const APP_STATE: &str = "app_state";
-
-fn main() {
-    App::build()
-        .add_plugins(DefaultPlugins)
-        .add_stage_before(stage::POST_UPDATE, RENDER_SETUP, SystemStage::parallel())
-        .add_stage_before(RENDER_SETUP, PRE_RENDER_SETUP, SystemStage::parallel())
-        .add_resource(State::new(AppState::Loading))
-        .add_stage_after(stage::UPDATE, APP_STATE, StateStage::<AppState>::default())
-        .add_plugin(BoardPlugin)
-        .add_plugin(CameraPlugin)
-        .add_plugin(ColoredPlugin)
-        .add_plugin(CursorPlugin)
-        .add_plugin(DebugTextPlugin)
-        .add_plugin(EditorPlugin)
-        .add_plugin(PinPlugin)
-        .add_plugin(SimulationPlugin)
-        .add_plugin(UvSpritePlugin)
-        .add_plugin(WirePlugin)
-        .add_plugin(WireColoredPlugin)
-        .add_resource(Config::default())
-        .add_resource(Circuit::default())
-        .init_resource::<GameAssets>()
-        .on_state_update(APP_STATE, AppState::Loading, configure_textures.system())
-        .on_state_enter(APP_STATE, AppState::InGame, setup_game.system())
-        .add_system(foo.system())
-        .run();
-}
-
-use self::wire_colored::WireColored;
-use bevy::input::keyboard::KeyboardInput;
-use bevy::input::ElementState;
-fn foo(
-    events: Res<Events<KeyboardInput>>,
-    mut reader: Local<EventReader<KeyboardInput>>,
-    mut query: Query<&mut WireColored>,
-) {
-    for ev in reader.iter(&events) {
-        match (ev.key_code, ev.state) {
-            (Some(KeyCode::J), ElementState::Pressed) => {
-                for mut wire_colored in query.iter_mut() {
-                    wire_colored.is_on = !wire_colored.is_on;
-                }
-            }
-            _ => {}
-        }
-    }
-}
-
-#[derive(Clone)]
-enum AppState {
-    Loading,
-    InGame,
-}
-
-fn configure_textures(
-    mut textures: ResMut<Assets<Texture>>,
-    game_assets: Res<GameAssets>,
-    events: Res<Events<AssetEvent<Texture>>>,
-    mut reader: Local<EventReader<AssetEvent<Texture>>>,
-    mut state: ResMut<State<AppState>>,
-) {
-    for ev in reader.iter(&events) {
-        match ev {
-            AssetEvent::Created { handle } => {
-                if *handle == game_assets.board_texture {
-                    let texture = textures.get_mut(handle).unwrap();
-                    texture.sampler.address_mode_u = AddressMode::Repeat;
-                    texture.sampler.address_mode_v = AddressMode::Repeat;
-                    state.set_next(AppState::InGame).unwrap(); //TODO more sophisticated loading progress
-                }
-            }
-            _ => {}
-        }
-    }
-}
-
-fn setup_game(commands: &mut Commands, assets: Res<GameAssets>) {
-    commands
-        .spawn(Camera2dBundle::default())
-        .with(CameraControlled);
-    commands.spawn(CameraUiBundle::default());
-
-    commands.spawn(BoardBundle {
-        board: Board {
-            start: Vec2i::new(-1000, -1000),
-            end: Vec2i::new(1000, 1000),
-            z: -0.5,
-            ..Default::default()
+    let instance = wgpu::Instance::new(wgpu::BackendBit::PRIMARY);
+    let surface = unsafe { instance.create_surface(&window) };
+    let adapter = block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+        power_preference: Default::default(),
+        compatible_surface: Some(&surface),
+    }))
+    .context("Failed to find a suitable adapter")?;
+    let (device, queue) = block_on(adapter.request_device(
+        &wgpu::DeviceDescriptor {
+            label: None,
+            features: Default::default(),
+            limits: Default::default(),
         },
-        colored: Colored {
-            color: Color::rgb(0.5, 0.5, 0.5),
-        },
+        None,
+    ))
+    .context("Failed to open device")?;
+
+    fn create_swap_chain(
+        device: &wgpu::Device,
+        surface: &wgpu::Surface,
+        window: &winit::window::Window,
+    ) -> wgpu::SwapChain {
+        device.create_swap_chain(
+            &surface,
+            &wgpu::SwapChainDescriptor {
+                usage: wgpu::TextureUsage::RENDER_ATTACHMENT,
+                format: wgpu::TextureFormat::Bgra8UnormSrgb,
+                width: window.inner_size().width,
+                height: window.inner_size().height,
+                present_mode: wgpu::PresentMode::Fifo,
+            },
+        )
+    }
+    let mut swap_chain = create_swap_chain(&device, &surface, &window);
+
+    event_loop.run(move |event, target, control_flow| match event {
+        Event::RedrawRequested(..) => {
+            let frame = loop {
+                match swap_chain.get_current_frame() {
+                    Ok(frame) => break frame.output,
+                    Err(wgpu::SwapChainError::Lost) | Err(wgpu::SwapChainError::Outdated) => {
+                        swap_chain = create_swap_chain(&device, &surface, &window);
+                    }
+                    Err(wgpu::SwapChainError::Timeout) => {
+                        return;
+                    }
+                    Err(err) => {
+                        eprintln!("{:?}", err);
+                        *control_flow = ControlFlow::Exit;
+                        return;
+                    }
+                }
+            };
+            let mut encoder = device.create_command_encoder(&Default::default());
+
+            encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
+                    attachment: &frame.view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color {
+                            r: 0.1,
+                            g: 0.2,
+                            b: 0.3,
+                            a: 1.0,
+                        }),
+                        store: true,
+                    },
+                }],
+                ..Default::default()
+            });
+
+            queue.submit(std::iter::once(encoder.finish()))
+        }
+        Event::WindowEvent {
+            event: WindowEvent::CloseRequested,
+            ..
+        } => {
+            *control_flow = ControlFlow::Exit;
+        }
+        Event::MainEventsCleared => {
+            window.request_redraw();
+        }
+        _ => {}
     });
-
-    commands
-        .spawn(TextBundle {
-            style: Style {
-                align_self: AlignSelf::FlexEnd,
-                ..Default::default()
-            },
-            text: Text {
-                font: assets.regular_font.clone(),
-                ..Default::default()
-            },
-            ..Default::default()
-        })
-        .with(DebugText);
 }

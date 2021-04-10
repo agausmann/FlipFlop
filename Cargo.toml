@@ -7,11 +7,7 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-# Use latest Git until next release, for text rendering improvements.
-#bevy = "0.4.0"
-bevy = { git = "https://github.com/bevyengine/bevy.git", rev = "4a08370" }
-indoc = "1.0.3"
-once_cell = "1.5.2"
-
-[profile.dev]
-opt-level = 2
+anyhow = "1.0"
+futures-executor = "0.3"
+wgpu = "0.7"
+winit = "0.24"
