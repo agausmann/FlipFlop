@@ -1,5 +1,8 @@
 use anyhow::Context;
 use futures_executor::block_on;
+use std::time::Instant;
+use wgpu_glyph::ab_glyph::FontArc;
+use wgpu_glyph::{GlyphBrushBuilder, Section, Text};
 use winit::event::{Event, WindowEvent};
 use winit::event_loop::ControlFlow;
 use winit::event_loop::EventLoop;
@@ -28,6 +31,7 @@ fn main() -> anyhow::Result<()> {
     ))
     .context("Failed to open device")?;
 
+    const RENDER_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Bgra8UnormSrgb;
     fn create_swap_chain(
         device: &wgpu::Device,
         surface: &wgpu::Surface,
@@ -37,7 +41,7 @@ fn main() -> anyhow::Result<()> {
             &surface,
             &wgpu::SwapChainDescriptor {
                 usage: wgpu::TextureUsage::RENDER_ATTACHMENT,
-                format: wgpu::TextureFormat::Bgra8UnormSrgb,
+                format: RENDER_FORMAT,
                 width: window.inner_size().width,
                 height: window.inner_size().height,
                 present_mode: wgpu::PresentMode::Fifo,
@@ -46,8 +50,23 @@ fn main() -> anyhow::Result<()> {
     }
     let mut swap_chain = create_swap_chain(&device, &surface, &window);
 
+    let fira_sans = FontArc::try_from_slice(include_bytes!("FiraSans-Regular.ttf"))?;
+    let mut glyph_brush = GlyphBrushBuilder::using_font(fira_sans).build(&device, RENDER_FORMAT);
+    let mut staging_belt = wgpu::util::StagingBelt::new(1024);
+    let mut local_pool = futures_executor::LocalPool::new();
+    let local_spawner = local_pool.spawner();
+
+    let mut last_render: Option<Instant> = None;
+    let mut fps = 0.0;
+
     event_loop.run(move |event, target, control_flow| match event {
         Event::RedrawRequested(..) => {
+            let this_render = Instant::now();
+            if let Some(last_render) = last_render {
+                fps = 1.0 / (this_render - last_render).as_secs_f32();
+            }
+            last_render = Some(this_render);
+
             let frame = loop {
                 match swap_chain.get_current_frame() {
                     Ok(frame) => break frame.output,
@@ -83,7 +102,34 @@ fn main() -> anyhow::Result<()> {
                 ..Default::default()
             });
 
-            queue.submit(std::iter::once(encoder.finish()))
+            let size = window.inner_size();
+            glyph_brush.queue(Section {
+                screen_position: (0.0, 0.0),
+                bounds: (size.width as f32, size.height as f32),
+                text: vec![Text::new(&format!("FPS: {:.1}", fps))
+                    .with_color([1.0, 1.0, 1.0, 1.0])
+                    .with_scale(24.0)],
+                ..Default::default()
+            });
+            glyph_brush
+                .draw_queued(
+                    &device,
+                    &mut staging_belt,
+                    &mut encoder,
+                    &frame.view,
+                    size.width,
+                    size.height,
+                )
+                .expect("Text draw error");
+            staging_belt.finish();
+
+            queue.submit(std::iter::once(encoder.finish()));
+
+            use futures_util::task::SpawnExt;
+            local_spawner
+                .spawn(staging_belt.recall())
+                .expect("Recall error");
+            local_pool.run_until_stalled();
         }
         Event::WindowEvent {
             event: WindowEvent::CloseRequested,
