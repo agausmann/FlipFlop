@@ -57,7 +57,7 @@ fn main() -> anyhow::Result<()> {
     }
     let mut swap_chain = create_swap_chain(&device, &surface, &window);
 
-    let fira_sans = FontArc::try_from_slice(include_bytes!("FiraSans-Regular.ttf"))?;
+    let fira_sans = FontArc::try_from_slice(include_bytes!("fonts/FiraSans-Regular.ttf"))?;
     let mut glyph_brush = GlyphBrushBuilder::using_font(fira_sans).build(&device, RENDER_FORMAT);
     let mut staging_belt = wgpu::util::StagingBelt::new(1024);
     let mut local_pool = futures_executor::LocalPool::new();

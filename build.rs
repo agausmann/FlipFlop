@@ -2,29 +2,18 @@ use anyhow::{bail, Context};
 use glob::glob;
 use std::path::Path;
 
-#[cfg(unix)]
-use std::os::unix::fs::symlink as symlink_dir;
-#[cfg(windows)]
-use std::os::windows::fs::symlink_dir;
-
 fn main() -> anyhow::Result<()> {
     let out_dir = Path::new(&std::env::var("OUT_DIR").unwrap()).to_path_buf();
 
-    // Copy assets to OUT_DIR
+    // Compile shaders in src/shaders/* to OUT_DIR/shaders/*.spv
 
-    let texture_src_dir = Path::new("res/textures/");
-    let texture_out_dir = Path::new(&out_dir).join("textures");
-    copy_all(texture_src_dir, &texture_out_dir)?;
-
-    // Compile shaders in res/shaders/* to OUT_DIR/shaders/*.spv
-
-    let shader_src_dir = Path::new("res/shaders/");
+    let shader_src_dir = Path::new("src/shaders/");
     let shader_out_dir = out_dir.join("shaders");
     let mut compiler = shaderc::Compiler::new().context("cannot instantiate compiler")?;
 
     std::fs::create_dir_all(&shader_out_dir).context("cannot create shader output directory")?;
 
-    for src_path_result in glob("res/shaders/**/*")? {
+    for src_path_result in glob("src/shaders/**/*")? {
         let src_path = match src_path_result {
             Ok(path) => path,
             Err(err) => {
@@ -74,16 +63,6 @@ fn main() -> anyhow::Result<()> {
             .with_context(|| format!("{:?}: unable to process shader", src_path))?;
     }
 
-    Ok(())
-}
-
-fn copy_all(src_dir: &Path, out_dir: &Path) -> anyhow::Result<()> {
-    //XXX this doesn't "copy" / merge contents with out dir, it replaces it.
-    std::fs::remove_file(out_dir).ok();
-    std::fs::remove_dir_all(out_dir).ok();
-
-    let src_dir = src_dir.canonicalize()?;
-    symlink_dir(src_dir, out_dir)?;
     Ok(())
 }
 

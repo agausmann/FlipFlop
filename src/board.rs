@@ -191,12 +191,9 @@ impl BoardRenderer {
             mapped_at_creation: false,
         });
 
-        let board_image = image::load_from_memory(include_bytes!(concat!(
-            env!("OUT_DIR"),
-            "/textures/board.png"
-        )))
-        .expect("failed to load board texture")
-        .into_rgba8();
+        let board_image = image::load_from_memory(include_bytes!("textures/board.png"))
+            .expect("failed to load board texture")
+            .into_rgba8();
         let size = wgpu::Extent3d {
             width: board_image.width(),
             height: board_image.height(),
