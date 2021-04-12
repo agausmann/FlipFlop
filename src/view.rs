@@ -93,6 +93,7 @@ impl ViewTransform {
     }
 
     pub fn bind_group(&self) -> &wgpu::BindGroup {
+        assert!(!self.buffer_updates, "ViewTransform buffer is stale");
         &self.bind_group
     }
 }
