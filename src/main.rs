@@ -1,7 +1,10 @@
-pub mod board;
+mod board;
+mod view;
 
-use self::board::{Board, BoardRenderer};
+use crate::board::{Board, BoardRenderer};
+use crate::view::ViewTransform;
 use anyhow::Context;
+use cgmath::Vector2;
 use futures_executor::block_on;
 use std::collections::VecDeque;
 use std::time::Instant;
@@ -60,7 +63,15 @@ fn main() -> anyhow::Result<()> {
     let mut local_pool = futures_executor::LocalPool::new();
     let local_spawner = local_pool.spawner();
 
-    let mut board_renderer = BoardRenderer::new(&device, &queue, RENDER_FORMAT);
+    let mut view_transform = ViewTransform::new(
+        &device,
+        Vector2::new(
+            window.inner_size().width as f32,
+            window.inner_size().height as f32,
+        ),
+    );
+
+    let mut board_renderer = BoardRenderer::new(&device, &queue, RENDER_FORMAT, &view_transform);
     board_renderer.insert(&Board {
         position: [0.0, 0.0],
         size: [2.0, 2.0],
@@ -98,6 +109,10 @@ fn main() -> anyhow::Result<()> {
                     Ok(frame) => break frame.output,
                     Err(wgpu::SwapChainError::Lost) | Err(wgpu::SwapChainError::Outdated) => {
                         swap_chain = create_swap_chain(&device, &surface, &window);
+                        view_transform.window_resized(Vector2::new(
+                            window.inner_size().width as f32,
+                            window.inner_size().height as f32,
+                        ));
                     }
                     Err(wgpu::SwapChainError::Timeout) => {
                         return;
@@ -109,6 +124,8 @@ fn main() -> anyhow::Result<()> {
                     }
                 }
             };
+
+            view_transform.update_buffer(&queue);
             let mut encoder = device.create_command_encoder(&Default::default());
 
             {
@@ -129,7 +146,7 @@ fn main() -> anyhow::Result<()> {
                     }],
                     depth_stencil_attachment: None,
                 });
-                board_renderer.draw(&queue, &mut render_pass);
+                board_renderer.draw(&view_transform, &queue, &mut render_pass);
             }
 
             let size = window.inner_size();

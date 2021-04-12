@@ -1,3 +1,4 @@
+use crate::view::ViewTransform;
 use bytemuck::{Pod, Zeroable};
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
@@ -88,8 +89,6 @@ pub struct BoardRenderer {
     texture: wgpu::Texture,
     texture_view: wgpu::TextureView,
     sampler: wgpu::Sampler,
-    camera_buffer: wgpu::Buffer,
-    camera_bind_group: wgpu::BindGroup,
     texture_bind_group: wgpu::BindGroup,
 
     instances: Vec<Instance>,
@@ -99,21 +98,12 @@ pub struct BoardRenderer {
 }
 
 impl BoardRenderer {
-    pub fn new(device: &wgpu::Device, queue: &wgpu::Queue, format: wgpu::TextureFormat) -> Self {
-        let camera_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("camera_bind_group_layout"),
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStage::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                }],
-            });
+    pub fn new(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        format: wgpu::TextureFormat,
+        view_transform: &ViewTransform,
+    ) -> Self {
         let texture_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: Some("texture_bind_group_layout"),
@@ -142,7 +132,10 @@ impl BoardRenderer {
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("BoardRenderer.pipeline_layout"),
-            bind_group_layouts: &[&camera_bind_group_layout, &texture_bind_group_layout],
+            bind_group_layouts: &[
+                view_transform.bind_group_layout(),
+                &texture_bind_group_layout,
+            ],
             push_constant_ranges: &[],
         });
         let vertex_module = device.create_shader_module(&wgpu::include_spirv!(concat!(
@@ -196,23 +189,6 @@ impl BoardRenderer {
             size: INSTANCE_BUFFER_SIZE,
             usage: wgpu::BufferUsage::VERTEX | wgpu::BufferUsage::COPY_DST,
             mapped_at_creation: false,
-        });
-
-        let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("camera_buffer"),
-            contents: bytemuck::bytes_of(&Camera {
-                pan: [0.0, 0.0],
-                zoom: 0.25,
-            }),
-            usage: wgpu::BufferUsage::UNIFORM,
-        });
-        let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("camera_bind_group"),
-            layout: &camera_bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: camera_buffer.as_entire_binding(),
-            }],
         });
 
         let board_image = image::load_from_memory(include_bytes!(concat!(
@@ -282,8 +258,6 @@ impl BoardRenderer {
             texture,
             texture_view,
             sampler,
-            camera_buffer,
-            camera_bind_group,
             texture_bind_group,
 
             instances: Vec::new(),
@@ -332,7 +306,12 @@ impl BoardRenderer {
         }
     }
 
-    pub fn draw<'a>(&'a mut self, queue: &wgpu::Queue, render_pass: &mut wgpu::RenderPass<'a>) {
+    pub fn draw<'a>(
+        &'a mut self,
+        view_transform: &'a ViewTransform,
+        queue: &wgpu::Queue,
+        render_pass: &mut wgpu::RenderPass<'a>,
+    ) {
         if self.buffer_update {
             self.buffer_update = false;
             let src_bytes: &[u8] = bytemuck::cast_slice(&self.instances);
@@ -343,7 +322,7 @@ impl BoardRenderer {
         render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
         render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
         render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-        render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
+        render_pass.set_bind_group(0, view_transform.bind_group(), &[]);
         render_pass.set_bind_group(1, &self.texture_bind_group, &[]);
         render_pass.draw_indexed(
             0..INDICES.len().try_into().unwrap(),

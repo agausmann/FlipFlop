@@ -9,5 +9,5 @@ layout(set=1, binding=0) uniform texture2D board_texture;
 layout(set=1, binding=1) uniform sampler board_sampler;
 
 void main() {
-	f_color = texture(sampler2D(board_texture, board_sampler), v_uv) * v_color;
+    f_color = texture(sampler2D(board_texture, board_sampler), v_uv) * v_color;
 }
