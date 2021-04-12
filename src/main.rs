@@ -1,5 +1,9 @@
+pub mod board;
+
+use self::board::{Board, BoardRenderer};
 use anyhow::Context;
 use futures_executor::block_on;
+use std::collections::VecDeque;
 use std::time::Instant;
 use wgpu_glyph::ab_glyph::FontArc;
 use wgpu_glyph::{GlyphBrushBuilder, Section, Text};
@@ -56,16 +60,38 @@ fn main() -> anyhow::Result<()> {
     let mut local_pool = futures_executor::LocalPool::new();
     let local_spawner = local_pool.spawner();
 
-    let mut last_render: Option<Instant> = None;
+    let mut board_renderer = BoardRenderer::new(&device, &queue, RENDER_FORMAT);
+    board_renderer.insert(&Board {
+        position: [0.0, 0.0],
+        size: [2.0, 2.0],
+        color: [0.2, 0.3, 0.1, 1.0],
+    });
+    board_renderer.insert(&Board {
+        position: [-4.0, -2.0],
+        size: [2.0, 1.0],
+        color: [0.3, 0.1, 0.2, 1.0],
+    });
+    board_renderer.insert(&Board {
+        position: [0.0, -4.0],
+        size: [2.0, 2.0],
+        color: [0.3, 0.2, 0.1, 1.0],
+    });
+
+    let mut frames: VecDeque<Instant> = VecDeque::new();
     let mut fps = 0.0;
 
-    event_loop.run(move |event, target, control_flow| match event {
+    event_loop.run(move |event, _, control_flow| match event {
         Event::RedrawRequested(..) => {
             let this_render = Instant::now();
-            if let Some(last_render) = last_render {
-                fps = 1.0 / (this_render - last_render).as_secs_f32();
+            frames.push_back(this_render);
+            while frames.len() > 10 {
+                frames.pop_front();
             }
-            last_render = Some(this_render);
+            if let (Some(&first), Some(&last)) = (frames.front(), frames.back()) {
+                if first != last {
+                    fps = (frames.len() - 1) as f32 / (last - first).as_secs_f32();
+                }
+            }
 
             let frame = loop {
                 match swap_chain.get_current_frame() {
@@ -85,28 +111,32 @@ fn main() -> anyhow::Result<()> {
             };
             let mut encoder = device.create_command_encoder(&Default::default());
 
-            encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
-                    attachment: &frame.view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.1,
-                            g: 0.2,
-                            b: 0.3,
-                            a: 1.0,
-                        }),
-                        store: true,
-                    },
-                }],
-                ..Default::default()
-            });
+            {
+                let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: None,
+                    color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
+                        attachment: &frame.view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color {
+                                r: 0.1,
+                                g: 0.2,
+                                b: 0.3,
+                                a: 1.0,
+                            }),
+                            store: true,
+                        },
+                    }],
+                    depth_stencil_attachment: None,
+                });
+                board_renderer.draw(&queue, &mut render_pass);
+            }
 
             let size = window.inner_size();
             glyph_brush.queue(Section {
                 screen_position: (0.0, 0.0),
                 bounds: (size.width as f32, size.height as f32),
-                text: vec![Text::new(&format!("FPS: {:.1}", fps))
+                text: vec![Text::new(&format!("FPS: {:.0}", fps))
                     .with_color([1.0, 1.0, 1.0, 1.0])
                     .with_scale(24.0)],
                 ..Default::default()
