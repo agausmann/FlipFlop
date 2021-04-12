@@ -31,10 +31,13 @@ struct Instance {
     position: [f32; 2],
     size: [f32; 2],
     color: [f32; 4],
+    z_index: f32,
 }
 
-static INSTANCE_ATTRIBUTES: Lazy<[wgpu::VertexAttribute; 3]> =
-    Lazy::new(|| wgpu::vertex_attr_array![1 => Float2, 2 => Float2, 3 => Float4]);
+const MAX_Z_INDEX: u32 = 255;
+
+static INSTANCE_ATTRIBUTES: Lazy<[wgpu::VertexAttribute; 4]> =
+    Lazy::new(|| wgpu::vertex_attr_array![1 => Float2, 2 => Float2, 3 => Float4, 4 => Float]);
 
 impl Instance {
     fn buffer_layout() -> wgpu::VertexBufferLayout<'static> {
@@ -50,6 +53,7 @@ impl Instance {
             position: board.position,
             size: board.size,
             color: board.color,
+            z_index: (board.z_index as f32) / (MAX_Z_INDEX as f32),
         }
     }
 }
@@ -161,7 +165,14 @@ impl BoardRenderer {
                 cull_mode: wgpu::CullMode::Back,
                 polygon_mode: wgpu::PolygonMode::Fill,
             },
-            depth_stencil: None,
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: crate::DEPTH_FORMAT,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::GreaterEqual,
+                stencil: Default::default(),
+                bias: Default::default(),
+                clamp_depth: false,
+            }),
             multisample: Default::default(),
             fragment: Some(wgpu::FragmentState {
                 module: &fragment_module,
@@ -333,6 +344,7 @@ pub struct Board {
     pub position: [f32; 2],
     pub size: [f32; 2],
     pub color: [f32; 4],
+    pub z_index: u32,
 }
 
 static NEXT_HANDLE: AtomicU64 = AtomicU64::new(0);

@@ -15,6 +15,9 @@ use winit::event_loop::ControlFlow;
 use winit::event_loop::EventLoop;
 use winit::window::WindowBuilder;
 
+const RENDER_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Bgra8UnormSrgb;
+const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
+
 fn main() -> anyhow::Result<()> {
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new()
@@ -38,7 +41,6 @@ fn main() -> anyhow::Result<()> {
     ))
     .context("Failed to open device")?;
 
-    const RENDER_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Bgra8UnormSrgb;
     fn create_swap_chain(
         device: &wgpu::Device,
         surface: &wgpu::Surface,
@@ -55,7 +57,27 @@ fn main() -> anyhow::Result<()> {
             },
         )
     }
+    fn create_depth_texture(
+        device: &wgpu::Device,
+        window: &winit::window::Window,
+    ) -> wgpu::Texture {
+        device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("depth_texture"),
+            size: wgpu::Extent3d {
+                width: window.inner_size().width,
+                height: window.inner_size().height,
+                depth: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: DEPTH_FORMAT,
+            usage: wgpu::TextureUsage::RENDER_ATTACHMENT | wgpu::TextureUsage::SAMPLED,
+        })
+    }
     let mut swap_chain = create_swap_chain(&device, &surface, &window);
+    let mut depth_texture = create_depth_texture(&device, &window);
+    let mut depth_texture_view = depth_texture.create_view(&Default::default());
 
     let fira_sans = FontArc::try_from_slice(include_bytes!("fonts/FiraSans-Regular.ttf"))?;
     let mut glyph_brush = GlyphBrushBuilder::using_font(fira_sans).build(&device, RENDER_FORMAT);
@@ -76,16 +98,25 @@ fn main() -> anyhow::Result<()> {
         position: [0.0, 0.0],
         size: [2.0, 2.0],
         color: [0.2, 0.3, 0.1, 1.0],
+        z_index: 1,
     });
     board_renderer.insert(&Board {
         position: [-4.0, -2.0],
         size: [2.0, 1.0],
         color: [0.3, 0.1, 0.2, 1.0],
+        z_index: 1,
     });
     board_renderer.insert(&Board {
         position: [0.0, -4.0],
         size: [2.0, 2.0],
         color: [0.3, 0.2, 0.1, 1.0],
+        z_index: 1,
+    });
+    board_renderer.insert(&Board {
+        position: [-1.0e4, -1.0e4],
+        size: [2.0e4, 2.0e4],
+        color: [0.1, 0.1, 0.1, 1.0],
+        z_index: 0,
     });
 
     let mut frames: VecDeque<Instant> = VecDeque::new();
@@ -109,6 +140,8 @@ fn main() -> anyhow::Result<()> {
                     Ok(frame) => break frame.output,
                     Err(wgpu::SwapChainError::Lost) | Err(wgpu::SwapChainError::Outdated) => {
                         swap_chain = create_swap_chain(&device, &surface, &window);
+                        depth_texture = create_depth_texture(&device, &window);
+                        depth_texture_view = depth_texture.create_view(&Default::default());
                         view_transform.window_resized(Vector2::new(
                             window.inner_size().width as f32,
                             window.inner_size().height as f32,
@@ -144,7 +177,16 @@ fn main() -> anyhow::Result<()> {
                             store: true,
                         },
                     }],
-                    depth_stencil_attachment: None,
+                    depth_stencil_attachment: Some(
+                        wgpu::RenderPassDepthStencilAttachmentDescriptor {
+                            attachment: &depth_texture_view,
+                            depth_ops: Some(wgpu::Operations {
+                                load: wgpu::LoadOp::Clear(0.0),
+                                store: true,
+                            }),
+                            stencil_ops: None,
+                        },
+                    ),
                 });
                 board_renderer.draw(&view_transform, &queue, &mut render_pass);
             }
