@@ -8,8 +8,7 @@ use crate::view::ViewTransform;
 use anyhow::Context;
 use cgmath::Vector2;
 use futures_executor::block_on;
-use std::collections::VecDeque;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use wgpu_glyph::ab_glyph::FontArc;
 use wgpu_glyph::{GlyphBrushBuilder, Section, Text};
 use winit::event::{ElementState, Event, WindowEvent};
@@ -18,6 +17,8 @@ use winit::window::WindowBuilder;
 
 const RENDER_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Bgra8UnormSrgb;
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
+
+const FPS_UPDATE_INTERVAL: Duration = Duration::from_millis(200);
 
 struct State {
     window: winit::window::Window,
@@ -36,7 +37,8 @@ struct State {
     view_transform: ViewTransform,
     board_renderer: BoardRenderer,
     controller: Controller,
-    frames: VecDeque<Instant>,
+    frames_since: Instant,
+    frame_count: usize,
     fps: f32,
     should_close: bool,
     last_update: Instant,
@@ -160,7 +162,8 @@ impl State {
             view_transform,
             board_renderer,
             controller,
-            frames: VecDeque::new(),
+            frames_since: Instant::now(),
+            frame_count: 0,
             fps: 0.0,
             should_close: false,
             last_update: Instant::now(),
@@ -199,15 +202,13 @@ impl State {
 
     fn redraw(&mut self) -> anyhow::Result<()> {
         let this_render = Instant::now();
-        self.frames.push_back(this_render);
-        while self.frames.len() > 10 {
-            self.frames.pop_front();
+        let interval = this_render - self.frames_since;
+        if interval >= FPS_UPDATE_INTERVAL {
+            self.frames_since = this_render;
+            self.fps = (self.frame_count as f32) / interval.as_secs_f32();
+            self.frame_count = 0;
         }
-        if let (Some(&first), Some(&last)) = (self.frames.front(), self.frames.back()) {
-            if first != last {
-                self.fps = (self.frames.len() - 1) as f32 / (last - first).as_secs_f32();
-            }
-        }
+        self.frame_count += 1;
 
         let frame = loop {
             match self.swap_chain.get_current_frame() {
