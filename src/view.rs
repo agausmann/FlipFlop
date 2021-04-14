@@ -77,6 +77,10 @@ impl ViewTransform {
         self.camera = camera;
     }
 
+    pub fn camera(&self) -> &Camera {
+        &self.camera
+    }
+
     pub fn update_buffer(&mut self, queue: &wgpu::Queue) {
         if self.buffer_updates {
             self.buffer_updates = false;
@@ -119,7 +123,7 @@ impl Uniforms {
             w: Vector4::unit_w(),
         };
         let view = Matrix4::from_nonuniform_scale(camera.zoom, camera.zoom, 1.0)
-            * Matrix4::from_translation(camera.pan.extend(0.0));
+            * Matrix4::from_translation(-camera.pan.extend(0.0));
         Self {
             view: (proj * view).into(),
         }

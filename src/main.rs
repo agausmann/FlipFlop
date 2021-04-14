@@ -1,7 +1,9 @@
 mod board;
+mod controller;
 mod view;
 
 use crate::board::{Board, BoardRenderer};
+use crate::controller::Controller;
 use crate::view::ViewTransform;
 use anyhow::Context;
 use cgmath::Vector2;
@@ -10,9 +12,8 @@ use std::collections::VecDeque;
 use std::time::Instant;
 use wgpu_glyph::ab_glyph::FontArc;
 use wgpu_glyph::{GlyphBrushBuilder, Section, Text};
-use winit::event::{Event, WindowEvent};
-use winit::event_loop::ControlFlow;
-use winit::event_loop::EventLoop;
+use winit::event::{ElementState, Event, WindowEvent};
+use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::WindowBuilder;
 
 const RENDER_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Bgra8UnormSrgb;
@@ -34,9 +35,11 @@ struct State {
     local_spawner: futures_executor::LocalSpawner,
     view_transform: ViewTransform,
     board_renderer: BoardRenderer,
+    controller: Controller,
     frames: VecDeque<Instant>,
     fps: f32,
     should_close: bool,
+    last_update: Instant,
 }
 
 fn create_swap_chain(
@@ -138,6 +141,8 @@ impl State {
             z_index: 0,
         });
 
+        let controller = Controller::new();
+
         Ok(Self {
             window,
             instance,
@@ -154,9 +159,11 @@ impl State {
             local_spawner,
             view_transform,
             board_renderer,
+            controller,
             frames: VecDeque::new(),
             fps: 0.0,
             should_close: false,
+            last_update: Instant::now(),
         })
     }
 
@@ -165,8 +172,29 @@ impl State {
             WindowEvent::CloseRequested => {
                 self.should_close = true;
             }
+            WindowEvent::KeyboardInput { input, .. } => {
+                if let Some(keycode) = input.virtual_keycode {
+                    let pressed = match input.state {
+                        ElementState::Pressed => true,
+                        ElementState::Released => false,
+                    };
+                    self.controller.handle_keyboard_input(keycode, pressed);
+                }
+            }
             _ => {}
         }
+    }
+
+    fn update(&mut self) {
+        let now = Instant::now();
+        let dt = (now - self.last_update).as_secs_f32();
+        self.last_update = now;
+
+        // Camera update
+        let mut camera = self.view_transform.camera().clone();
+        camera.pan += self.controller.camera_pan() * dt / camera.zoom;
+        camera.zoom *= self.controller.camera_zoom().powf(dt);
+        self.view_transform.camera_update(camera);
     }
 
     fn redraw(&mut self) -> anyhow::Result<()> {
@@ -279,6 +307,7 @@ fn main() -> anyhow::Result<()> {
     event_loop.run(move |event, _, control_flow| {
         match event {
             Event::RedrawRequested(..) => {
+                state.update();
                 state.redraw().unwrap();
             }
             Event::WindowEvent { event, .. } => {
