@@ -11,6 +11,11 @@ fn main() -> anyhow::Result<()> {
     let shader_out_dir = out_dir.join("shaders");
     let mut compiler = shaderc::Compiler::new().context("cannot instantiate compiler")?;
 
+    println!(
+        "cargo:rerun-if-changed={}",
+        shader_src_dir.to_str().context("path is not valid UTF-8")?
+    );
+
     std::fs::create_dir_all(&shader_out_dir).context("cannot create shader output directory")?;
 
     for src_path_result in glob("src/shaders/**/*")? {

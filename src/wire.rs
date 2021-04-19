@@ -9,11 +9,12 @@ use wgpu::util::DeviceExt;
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
 struct Vertex {
-    position: [f32; 2],
+    position_const: [f32; 2],
+    position_lin: [f32; 2],
 }
 
-static VERTEX_ATTRIBUTES: Lazy<[wgpu::VertexAttribute; 1]> =
-    Lazy::new(|| wgpu::vertex_attr_array![0 => Float2]);
+static VERTEX_ATTRIBUTES: Lazy<[wgpu::VertexAttribute; 2]> =
+    Lazy::new(|| wgpu::vertex_attr_array![0 => Float2, 1 => Float2]);
 
 impl Vertex {
     fn buffer_layout() -> wgpu::VertexBufferLayout<'static> {
@@ -28,16 +29,13 @@ impl Vertex {
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 struct Instance {
+    cluster_index: u32,
     position: [f32; 2],
     size: [f32; 2],
-    color: [f32; 4],
-    z_index: f32,
 }
 
-const MAX_Z_INDEX: u32 = 255;
-
-static INSTANCE_ATTRIBUTES: Lazy<[wgpu::VertexAttribute; 4]> =
-    Lazy::new(|| wgpu::vertex_attr_array![1 => Float2, 2 => Float2, 3 => Float4, 4 => Float]);
+static INSTANCE_ATTRIBUTES: Lazy<[wgpu::VertexAttribute; 3]> =
+    Lazy::new(|| wgpu::vertex_attr_array![2 => Uint, 3 => Float2, 4 => Float2]);
 
 impl Instance {
     fn buffer_layout() -> wgpu::VertexBufferLayout<'static> {
@@ -48,36 +46,40 @@ impl Instance {
         }
     }
 
-    fn new(board: &Board) -> Self {
+    fn new(wire: &Wire) -> Self {
+        // Wire sizing only works for non-negative sizes.
+        // Ensure size is positive, and adjust position accordingly.
+        let abs_size = [wire.size[0].abs(), wire.size[1].abs()];
+        let abs_position = [
+            wire.position[0] - (abs_size[0] - wire.size[0]) / 2.0,
+            wire.position[1] - (abs_size[1] - wire.size[1]) / 2.0,
+        ];
         Self {
-            position: board.position,
-            size: board.size,
-            color: board.color,
-            z_index: (board.z_index as f32) / (MAX_Z_INDEX as f32),
+            cluster_index: wire.cluster_index,
+            position: abs_position,
+            size: abs_size,
         }
     }
 }
 
-//XXX this belongs somewhere else
-#[repr(C)]
-#[derive(Clone, Copy, Pod, Zeroable)]
-struct Camera {
-    pan: [f32; 2],
-    zoom: f32,
-}
+const WIRE_RADIUS: f32 = 1.0 / 16.0;
 
 const VERTICES: &[Vertex] = &[
     Vertex {
-        position: [0.0, 0.0],
+        position_const: [0.5 - WIRE_RADIUS, 0.5 - WIRE_RADIUS],
+        position_lin: [0.0, 0.0],
     },
     Vertex {
-        position: [0.0, 1.0],
+        position_const: [0.5 - WIRE_RADIUS, 0.5 + WIRE_RADIUS],
+        position_lin: [0.0, 1.0],
     },
     Vertex {
-        position: [1.0, 1.0],
+        position_const: [0.5 + WIRE_RADIUS, 0.5 + WIRE_RADIUS],
+        position_lin: [1.0, 1.0],
     },
     Vertex {
-        position: [1.0, 0.0],
+        position_const: [0.5 + WIRE_RADIUS, 0.5 - WIRE_RADIUS],
+        position_lin: [1.0, 0.0],
     },
 ];
 
@@ -85,15 +87,15 @@ const INDICES: &[u16] = &[0, 1, 2, 0, 2, 3];
 
 const INSTANCE_BUFFER_SIZE: wgpu::BufferAddress = 1 * 1024 * 1024; // 1MB
 
-pub struct BoardRenderer {
+pub struct WireRenderer {
     render_pipeline: wgpu::RenderPipeline,
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
     instance_buffer: wgpu::Buffer,
-    texture: wgpu::Texture,
-    texture_view: wgpu::TextureView,
-    sampler: wgpu::Sampler,
     bind_group: wgpu::BindGroup,
+
+    wire_color_buffer: wgpu::Buffer,
+    wire_state_buffer: wgpu::Buffer,
 
     instances: Vec<Instance>,
     instance_to_handle: Vec<Handle>,
@@ -101,7 +103,7 @@ pub struct BoardRenderer {
     buffer_update: bool,
 }
 
-impl BoardRenderer {
+impl WireRenderer {
     pub fn new(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
@@ -109,24 +111,25 @@ impl BoardRenderer {
         view_transform: &ViewTransform,
     ) -> Self {
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("BoardRenderer.bind_group_layout"),
+            label: Some("WireRenderer.bind_group_layout"),
             entries: &[
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
-                    visibility: wgpu::ShaderStage::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        multisampled: false,
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                    visibility: wgpu::ShaderStage::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
                     },
                     count: None,
                 },
                 wgpu::BindGroupLayoutEntry {
                     binding: 1,
-                    visibility: wgpu::ShaderStage::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler {
-                        comparison: false,
-                        filtering: true,
+                    visibility: wgpu::ShaderStage::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
                     },
                     count: None,
                 },
@@ -134,20 +137,20 @@ impl BoardRenderer {
         });
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("BoardRenderer.pipeline_layout"),
+            label: Some("WireRenderer.pipeline_layout"),
             bind_group_layouts: &[view_transform.bind_group_layout(), &bind_group_layout],
             push_constant_ranges: &[],
         });
         let vertex_module = device.create_shader_module(&wgpu::include_spirv!(concat!(
             env!("OUT_DIR"),
-            "/shaders/board.vert.spv"
+            "/shaders/wire.vert.spv"
         )));
         let fragment_module = device.create_shader_module(&wgpu::include_spirv!(concat!(
             env!("OUT_DIR"),
-            "/shaders/board.frag.spv"
+            "/shaders/wire.frag.spv"
         )));
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("BoardRenderer.render_pipeline"),
+            label: Some("WireRenderer.render_pipeline"),
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &vertex_module,
@@ -163,8 +166,10 @@ impl BoardRenderer {
             },
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: crate::DEPTH_FORMAT,
-                depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::GreaterEqual,
+                //depth_write_enabled: true,
+                //depth_compare: wgpu::CompareFunction::GreaterEqual,
+                depth_write_enabled: false,
+                depth_compare: wgpu::CompareFunction::Always,
                 stencil: Default::default(),
                 bias: Default::default(),
                 clamp_depth: false,
@@ -182,74 +187,44 @@ impl BoardRenderer {
             }),
         });
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("BoardRenderer.vertex_buffer"),
+            label: Some("WireRenderer.vertex_buffer"),
             contents: bytemuck::cast_slice(VERTICES),
             usage: wgpu::BufferUsage::VERTEX,
         });
         let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("BoardRenderer.index_buffer"),
+            label: Some("WireRenderer.index_buffer"),
             contents: bytemuck::cast_slice(INDICES),
             usage: wgpu::BufferUsage::INDEX,
         });
         let instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("BoardRenderer.instance_buffer"),
+            label: Some("WireRenderer.instance_buffer"),
             size: INSTANCE_BUFFER_SIZE,
             usage: wgpu::BufferUsage::VERTEX | wgpu::BufferUsage::COPY_DST,
             mapped_at_creation: false,
         });
 
-        let board_image = image::load_from_memory(include_bytes!("textures/board.png"))
-            .expect("failed to load board texture")
-            .into_rgba8();
-        let size = wgpu::Extent3d {
-            width: board_image.width(),
-            height: board_image.height(),
-            ..Default::default()
-        };
-        let texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("BoardRenderer.texture"),
-            size,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
-            usage: wgpu::TextureUsage::SAMPLED | wgpu::TextureUsage::COPY_DST,
+        let wire_color_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("WireRenderer.wire_color_buffer"),
+            contents: bytemuck::bytes_of(&WireColor::default()),
+            usage: wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
         });
-        queue.write_texture(
-            wgpu::TextureCopyView {
-                texture: &texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-            },
-            &board_image,
-            wgpu::TextureDataLayout {
-                offset: 0,
-                bytes_per_row: 4 * size.width,
-                rows_per_image: size.height,
-            },
-            size,
-        );
-        let texture_view = texture.create_view(&Default::default());
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("BoardRenderer.sampler"),
-            address_mode_u: wgpu::AddressMode::Repeat,
-            address_mode_v: wgpu::AddressMode::Repeat,
-            mag_filter: wgpu::FilterMode::Nearest,
-            min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::FilterMode::Linear,
-            ..Default::default()
+        let wire_state_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("WireRenderer.wire_state_buffer"),
+            contents: bytemuck::bytes_of(&WireState::default()),
+            usage: wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
         });
+
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("BoardRenderer.bind_group"),
+            label: Some("WireRenderer.bind_group"),
             layout: &bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&texture_view),
+                    resource: wire_color_buffer.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&sampler),
+                    resource: wire_state_buffer.as_entire_binding(),
                 },
             ],
         });
@@ -259,10 +234,10 @@ impl BoardRenderer {
             vertex_buffer,
             index_buffer,
             instance_buffer,
-            texture,
-            texture_view,
-            sampler,
             bind_group,
+
+            wire_color_buffer,
+            wire_state_buffer,
 
             instances: Vec::new(),
             instance_to_handle: Vec::new(),
@@ -271,19 +246,19 @@ impl BoardRenderer {
         }
     }
 
-    pub fn insert(&mut self, board: &Board) -> Handle {
+    pub fn insert(&mut self, wire: &Wire) -> Handle {
         let handle = Handle::new();
-        self.update(&handle, board);
+        self.update(&handle, wire);
         handle
     }
 
-    pub fn update(&mut self, handle: &Handle, board: &Board) {
+    pub fn update(&mut self, handle: &Handle, wire: &Wire) {
         self.buffer_update = true;
         if let Some(&index) = self.handle_to_instance.get(handle) {
-            self.instances[index] = Instance::new(board);
+            self.instances[index] = Instance::new(wire);
         } else {
             let index = self.instances.len();
-            self.instances.push(Instance::new(board));
+            self.instances.push(Instance::new(wire));
             self.instance_to_handle.push(handle.clone());
             self.handle_to_instance.insert(handle.clone(), index);
         }
@@ -308,6 +283,14 @@ impl BoardRenderer {
         } else {
             false
         }
+    }
+
+    pub fn update_wire_color(&mut self, queue: &wgpu::Queue, wire_color: &WireColor) {
+        queue.write_buffer(&self.wire_color_buffer, 0, bytemuck::bytes_of(wire_color));
+    }
+
+    pub fn update_wire_state(&mut self, queue: &wgpu::Queue, wire_state: &WireState) {
+        queue.write_buffer(&self.wire_state_buffer, 0, bytemuck::bytes_of(wire_state));
     }
 
     pub fn draw<'a>(
@@ -336,11 +319,38 @@ impl BoardRenderer {
     }
 }
 
-pub struct Board {
+pub struct Wire {
+    pub cluster_index: u32,
     pub position: [f32; 2],
     pub size: [f32; 2],
-    pub color: [f32; 4],
-    pub z_index: u32,
+}
+
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+#[repr(C)]
+pub struct WireColor {
+    pub off_color: [f32; 4],
+    pub on_color: [f32; 4],
+}
+
+impl Default for WireColor {
+    fn default() -> Self {
+        Self {
+            off_color: [0.0, 0.0, 0.0, 1.0],
+            on_color: [0.8, 0.0, 0.0, 1.0],
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+#[repr(C)]
+pub struct WireState {
+    pub states: [u32; 1024],
+}
+
+impl Default for WireState {
+    fn default() -> Self {
+        Self { states: [0; 1024] }
+    }
 }
 
 static NEXT_HANDLE: AtomicU64 = AtomicU64::new(0);

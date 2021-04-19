@@ -1,10 +1,12 @@
 mod board;
 mod controller;
 mod view;
+mod wire;
 
 use crate::board::{Board, BoardRenderer};
 use crate::controller::Controller;
 use crate::view::ViewTransform;
+use crate::wire::{Wire, WireRenderer, WireState};
 use anyhow::Context;
 use cgmath::Vector2;
 use futures_executor::block_on;
@@ -36,6 +38,7 @@ struct State {
     local_spawner: futures_executor::LocalSpawner,
     view_transform: ViewTransform,
     board_renderer: BoardRenderer,
+    wire_renderer: WireRenderer,
     controller: Controller,
     frames_since: Instant,
     frame_count: usize,
@@ -143,6 +146,27 @@ impl State {
             z_index: 0,
         });
 
+        let mut wire_renderer = WireRenderer::new(&device, &queue, RENDER_FORMAT, &view_transform);
+
+        wire_renderer.insert(&Wire {
+            cluster_index: 0,
+            position: [0.0, 0.0],
+            size: [1.0, 0.0],
+        });
+        wire_renderer.insert(&Wire {
+            cluster_index: 1,
+            position: [0.0, 2.0],
+            size: [-2.0, 0.0],
+        });
+        wire_renderer.insert(&Wire {
+            cluster_index: 0,
+            position: [0.0, 0.0],
+            size: [0.0, -2.0],
+        });
+        let mut wire_state = WireState::default();
+        wire_state.states[0] = 0x00000001;
+        wire_renderer.update_wire_state(&queue, &wire_state);
+
         let controller = Controller::new();
 
         Ok(Self {
@@ -161,6 +185,7 @@ impl State {
             local_spawner,
             view_transform,
             board_renderer,
+            wire_renderer,
             controller,
             frames_since: Instant::now(),
             frame_count: 0,
@@ -261,6 +286,8 @@ impl State {
                 }),
             });
             self.board_renderer
+                .draw(&self.view_transform, &self.queue, &mut render_pass);
+            self.wire_renderer
                 .draw(&self.view_transform, &self.queue, &mut render_pass);
         }
 
