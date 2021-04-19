@@ -53,8 +53,8 @@ impl Default for Camera {
             pan: Vector2::zero(),
             zoom: 16.0,
 
-            pan_speed: 300.0,
-            zoom_speed: 2.0,
+            pan_speed: 500.0,
+            zoom_speed: 4.0,
 
             pan_up: false,
             pan_down: false,
