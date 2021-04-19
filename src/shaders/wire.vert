@@ -9,8 +9,8 @@ layout(location=4) in vec2 i_wire_size;
 
 layout(location=0) out vec4 v_color;
 
-layout(set=0, binding=0) uniform ViewTransform {
-    mat4 u_view;
+layout(set=0, binding=0) uniform Viewport {
+    mat4 u_view_proj;
 };
 layout(set=1, binding=0) uniform WireColor {
     vec4 u_off_color;
@@ -23,7 +23,7 @@ layout(set=1, binding=1) uniform WireState {
 void main() {
     vec2 wire_coordinate = i_wire_position + a_position_const + i_wire_size * a_position_lin;
 
-    gl_Position = u_view * vec4(wire_coordinate, 0.0, 1.0);
+    gl_Position = u_view_proj * vec4(wire_coordinate, 0.0, 1.0);
 
     if ((u_cluster_states[i_wire_cluster_index / 32] & (1 << (i_wire_cluster_index % 32))) != 0) {
         v_color = u_on_color;
