@@ -1,19 +1,16 @@
 mod board;
-mod controller;
-mod view;
+mod viewport;
 mod wire;
 
 use crate::board::{Board, BoardRenderer};
-use crate::controller::Controller;
-use crate::view::ViewTransform;
+use crate::viewport::Viewport;
 use crate::wire::{Wire, WireRenderer, WireState};
 use anyhow::Context;
-use cgmath::Vector2;
 use futures_executor::block_on;
 use std::time::{Duration, Instant};
 use wgpu_glyph::ab_glyph::FontArc;
 use wgpu_glyph::{GlyphBrushBuilder, Section, Text};
-use winit::event::{ElementState, Event, WindowEvent};
+use winit::event::{ElementState, Event, VirtualKeyCode, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::WindowBuilder;
 
@@ -36,10 +33,9 @@ struct State {
     staging_belt: wgpu::util::StagingBelt,
     local_pool: futures_executor::LocalPool,
     local_spawner: futures_executor::LocalSpawner,
-    view_transform: ViewTransform,
+    viewport: Viewport,
     board_renderer: BoardRenderer,
     wire_renderer: WireRenderer,
-    controller: Controller,
     frames_since: Instant,
     frame_count: usize,
     fps: f32,
@@ -111,16 +107,9 @@ impl State {
         let local_pool = futures_executor::LocalPool::new();
         let local_spawner = local_pool.spawner();
 
-        let view_transform = ViewTransform::new(
-            &device,
-            Vector2::new(
-                window.inner_size().width as f32,
-                window.inner_size().height as f32,
-            ),
-        );
+        let viewport = Viewport::new(&device);
 
-        let mut board_renderer =
-            BoardRenderer::new(&device, &queue, RENDER_FORMAT, &view_transform);
+        let mut board_renderer = BoardRenderer::new(&device, &queue, RENDER_FORMAT, &viewport);
         board_renderer.insert(&Board {
             position: [0.0, 0.0],
             size: [2.0, 2.0],
@@ -146,7 +135,7 @@ impl State {
             z_index: 0,
         });
 
-        let mut wire_renderer = WireRenderer::new(&device, &queue, RENDER_FORMAT, &view_transform);
+        let mut wire_renderer = WireRenderer::new(&device, RENDER_FORMAT, &viewport);
 
         wire_renderer.insert(&Wire {
             cluster_index: 0,
@@ -167,8 +156,6 @@ impl State {
         wire_state.states[0] = 0x00000001;
         wire_renderer.update_wire_state(&queue, &wire_state);
 
-        let controller = Controller::new();
-
         Ok(Self {
             window,
             instance,
@@ -183,10 +170,9 @@ impl State {
             staging_belt,
             local_pool,
             local_spawner,
-            view_transform,
+            viewport,
             board_renderer,
             wire_renderer,
-            controller,
             frames_since: Instant::now(),
             frame_count: 0,
             fps: 0.0,
@@ -206,7 +192,28 @@ impl State {
                         ElementState::Pressed => true,
                         ElementState::Released => false,
                     };
-                    self.controller.handle_keyboard_input(keycode, pressed);
+
+                    match keycode {
+                        VirtualKeyCode::Up => {
+                            self.viewport.camera_mut().pan_up = pressed;
+                        }
+                        VirtualKeyCode::Down => {
+                            self.viewport.camera_mut().pan_down = pressed;
+                        }
+                        VirtualKeyCode::Left => {
+                            self.viewport.camera_mut().pan_left = pressed;
+                        }
+                        VirtualKeyCode::Right => {
+                            self.viewport.camera_mut().pan_right = pressed;
+                        }
+                        VirtualKeyCode::PageUp => {
+                            self.viewport.camera_mut().zoom_in = pressed;
+                        }
+                        VirtualKeyCode::PageDown => {
+                            self.viewport.camera_mut().zoom_out = pressed;
+                        }
+                        _ => {}
+                    }
                 }
             }
             _ => {}
@@ -215,14 +222,9 @@ impl State {
 
     fn update(&mut self) {
         let now = Instant::now();
-        let dt = (now - self.last_update).as_secs_f32();
+        let dt = now - self.last_update;
         self.last_update = now;
-
-        // Camera update
-        let mut camera = self.view_transform.camera().clone();
-        camera.pan += self.controller.camera_pan() * dt / camera.zoom;
-        camera.zoom *= self.controller.camera_zoom().powf(dt);
-        self.view_transform.camera_update(camera);
+        self.viewport.update(dt, &self.window, &self.queue);
     }
 
     fn redraw(&mut self) -> anyhow::Result<()> {
@@ -243,10 +245,6 @@ impl State {
 
                     self.depth_texture = create_depth_texture(&self.device, &self.window);
                     self.depth_texture_view = self.depth_texture.create_view(&Default::default());
-                    self.view_transform.window_resized(Vector2::new(
-                        self.window.inner_size().width as f32,
-                        self.window.inner_size().height as f32,
-                    ));
                 }
                 Err(wgpu::SwapChainError::Timeout) => {
                     return Ok(());
@@ -257,7 +255,6 @@ impl State {
             }
         };
 
-        self.view_transform.update_buffer(&self.queue);
         let mut encoder = self.device.create_command_encoder(&Default::default());
 
         {
@@ -286,9 +283,9 @@ impl State {
                 }),
             });
             self.board_renderer
-                .draw(&self.view_transform, &self.queue, &mut render_pass);
+                .draw(&self.viewport, &self.queue, &mut render_pass);
             self.wire_renderer
-                .draw(&self.view_transform, &self.queue, &mut render_pass);
+                .draw(&self.viewport, &self.queue, &mut render_pass);
         }
 
         let size = self.window.inner_size();

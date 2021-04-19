@@ -1,4 +1,4 @@
-use crate::view::ViewTransform;
+use crate::viewport::Viewport;
 use bytemuck::{Pod, Zeroable};
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
@@ -106,7 +106,7 @@ impl BoardRenderer {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         format: wgpu::TextureFormat,
-        view_transform: &ViewTransform,
+        viewport: &Viewport,
     ) -> Self {
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("BoardRenderer.bind_group_layout"),
@@ -135,7 +135,7 @@ impl BoardRenderer {
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("BoardRenderer.pipeline_layout"),
-            bind_group_layouts: &[view_transform.bind_group_layout(), &bind_group_layout],
+            bind_group_layouts: &[viewport.bind_group_layout(), &bind_group_layout],
             push_constant_ranges: &[],
         });
         let vertex_module = device.create_shader_module(&wgpu::include_spirv!(concat!(
@@ -312,7 +312,7 @@ impl BoardRenderer {
 
     pub fn draw<'a>(
         &'a mut self,
-        view_transform: &'a ViewTransform,
+        viewport: &'a Viewport,
         queue: &wgpu::Queue,
         render_pass: &mut wgpu::RenderPass<'a>,
     ) {
@@ -326,7 +326,7 @@ impl BoardRenderer {
         render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
         render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
         render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-        render_pass.set_bind_group(0, view_transform.bind_group(), &[]);
+        render_pass.set_bind_group(0, viewport.bind_group(), &[]);
         render_pass.set_bind_group(1, &self.bind_group, &[]);
         render_pass.draw_indexed(
             0..INDICES.len().try_into().unwrap(),
