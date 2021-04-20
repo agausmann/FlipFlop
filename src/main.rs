@@ -65,7 +65,8 @@ fn create_swap_chain(
             format: RENDER_FORMAT,
             width: window.inner_size().width,
             height: window.inner_size().height,
-            present_mode: wgpu::PresentMode::Fifo,
+            //present_mode: wgpu::PresentMode::Fifo,
+            present_mode: wgpu::PresentMode::Mailbox,
         },
     )
 }
