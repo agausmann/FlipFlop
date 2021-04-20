@@ -236,14 +236,17 @@ impl State {
                 }
                 _ => {}
             },
-            WindowEvent::MouseWheel { delta, .. } => {
-                let delta = match delta {
-                    MouseScrollDelta::LineDelta(_x, y) => y,
-                    MouseScrollDelta::PixelDelta(position) => position.y as f32 / 16.0,
-                };
-                let mut camera = self.viewport.camera_mut();
-                camera.set_zoom(camera.zoom * camera.zoom_step.powf(delta));
-            }
+            WindowEvent::MouseWheel { delta, .. } => match self.cursor_mode {
+                CursorMode::Normal => {
+                    let delta = match delta {
+                        MouseScrollDelta::LineDelta(_x, y) => y,
+                        MouseScrollDelta::PixelDelta(position) => position.y as f32 / 16.0,
+                    };
+                    let mut camera = self.viewport.camera_mut();
+                    camera.set_zoom(camera.zoom * camera.zoom_step.powf(delta));
+                }
+                _ => {}
+            },
             WindowEvent::KeyboardInput { input, .. } => {
                 if let Some(keycode) = input.virtual_keycode {
                     let pressed = match input.state {
