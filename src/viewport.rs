@@ -28,7 +28,7 @@ impl Camera {
 
             pan_speed: 500.0,
             zoom_speed: 4.0,
-            zoom_step: 1.05,
+            zoom_step: 1.1,
 
             pan_up: false,
             pan_down: false,
