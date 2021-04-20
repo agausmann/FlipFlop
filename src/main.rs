@@ -37,6 +37,7 @@ struct State {
     viewport: Viewport,
     board_renderer: BoardRenderer,
     wire_renderer: WireRenderer,
+    preview_wire: wire::Handle,
     frames_since: Instant,
     frame_count: usize,
     fps: f32,
@@ -139,22 +140,27 @@ impl State {
         let mut wire_renderer = WireRenderer::new(&device, RENDER_FORMAT, &viewport);
 
         wire_renderer.insert(&Wire {
-            cluster_index: 0,
+            cluster_index: 1,
             position: [0.0, 0.0],
             size: [1.0, 0.0],
         });
         wire_renderer.insert(&Wire {
-            cluster_index: 1,
+            cluster_index: 2,
             position: [0.0, 2.0],
             size: [-2.0, 0.0],
         });
         wire_renderer.insert(&Wire {
-            cluster_index: 0,
+            cluster_index: 1,
             position: [0.0, 0.0],
             size: [0.0, -2.0],
         });
+        let preview_wire = wire_renderer.insert(&Wire {
+            cluster_index: 0,
+            position: [0.0, 0.0],
+            size: [0.0, 0.0],
+        });
         let mut wire_state = WireState::default();
-        wire_state.states[0] = 0x00000001;
+        wire_state.states[0] = 0x00000002;
         wire_renderer.update_wire_state(&queue, &wire_state);
 
         Ok(Self {
@@ -174,6 +180,7 @@ impl State {
             viewport,
             board_renderer,
             wire_renderer,
+            preview_wire,
             frames_since: Instant::now(),
             frame_count: 0,
             fps: 0.0,
@@ -233,6 +240,14 @@ impl State {
         let dt = now - self.last_update;
         self.last_update = now;
         self.viewport.update(dt, &self.window, &self.queue);
+        self.wire_renderer.update(
+            &self.preview_wire,
+            &Wire {
+                cluster_index: 0,
+                position: self.viewport.cursor().tile().into(),
+                size: [0.0, 0.0],
+            },
+        );
     }
 
     fn redraw(&mut self) -> anyhow::Result<()> {
