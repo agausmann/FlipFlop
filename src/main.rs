@@ -11,17 +11,24 @@ use futures_executor::block_on;
 use std::time::{Duration, Instant};
 use wgpu_glyph::ab_glyph::FontArc;
 use wgpu_glyph::{GlyphBrushBuilder, Section, Text};
-use winit::event::{ElementState, Event, MouseScrollDelta, VirtualKeyCode, WindowEvent};
+use winit::event::{
+    ElementState, Event, MouseButton, MouseScrollDelta, VirtualKeyCode, WindowEvent,
+};
 use winit::event_loop::{ControlFlow, EventLoop};
-use winit::window::WindowBuilder;
+use winit::window::{CursorIcon, Window, WindowBuilder};
 
 const RENDER_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Bgra8UnormSrgb;
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
 const FPS_UPDATE_INTERVAL: Duration = Duration::from_millis(200);
 
+enum CursorMode {
+    Normal,
+    Pan { last_position: Vector2<f32> },
+}
+
 struct State {
-    window: winit::window::Window,
+    window: Window,
     instance: wgpu::Instance,
     surface: wgpu::Surface,
     adapter: wgpu::Adapter,
@@ -43,12 +50,13 @@ struct State {
     fps: f32,
     should_close: bool,
     last_update: Instant,
+    cursor_mode: CursorMode,
 }
 
 fn create_swap_chain(
     device: &wgpu::Device,
     surface: &wgpu::Surface,
-    window: &winit::window::Window,
+    window: &Window,
 ) -> wgpu::SwapChain {
     device.create_swap_chain(
         &surface,
@@ -61,7 +69,7 @@ fn create_swap_chain(
         },
     )
 }
-fn create_depth_texture(device: &wgpu::Device, window: &winit::window::Window) -> wgpu::Texture {
+fn create_depth_texture(device: &wgpu::Device, window: &Window) -> wgpu::Texture {
     device.create_texture(&wgpu::TextureDescriptor {
         label: Some("depth_texture"),
         size: wgpu::Extent3d {
@@ -78,7 +86,7 @@ fn create_depth_texture(device: &wgpu::Device, window: &winit::window::Window) -
 }
 
 impl State {
-    async fn new(window: winit::window::Window) -> anyhow::Result<Self> {
+    async fn new(window: Window) -> anyhow::Result<Self> {
         let instance = wgpu::Instance::new(wgpu::BackendBit::PRIMARY);
         let surface = unsafe { instance.create_surface(&window) };
         let adapter = instance
@@ -186,6 +194,7 @@ impl State {
             fps: 0.0,
             should_close: false,
             last_update: Instant::now(),
+            cursor_mode: CursorMode::Normal,
         })
     }
 
@@ -199,8 +208,34 @@ impl State {
                     x: position.x as f32,
                     y: position.y as f32,
                 };
+                match self.cursor_mode {
+                    CursorMode::Normal => {}
+                    CursorMode::Pan { last_position } => {
+                        let mut delta = position - last_position;
+                        delta.y = -delta.y;
+                        let camera = self.viewport.camera_mut();
+                        camera.pan -= delta / camera.zoom;
+
+                        self.cursor_mode = CursorMode::Pan {
+                            last_position: position,
+                        };
+                    }
+                }
                 self.viewport.cursor_moved(position);
             }
+            WindowEvent::MouseInput { button, state, .. } => match (button, state) {
+                (MouseButton::Middle, ElementState::Pressed) => {
+                    self.cursor_mode = CursorMode::Pan {
+                        last_position: self.viewport.cursor().screen_position,
+                    };
+                    self.window.set_cursor_icon(CursorIcon::Grabbing);
+                }
+                (MouseButton::Middle, ElementState::Released) => {
+                    self.cursor_mode = CursorMode::Normal;
+                    self.window.set_cursor_icon(CursorIcon::Default);
+                }
+                _ => {}
+            },
             WindowEvent::MouseWheel { delta, .. } => {
                 let delta = match delta {
                     MouseScrollDelta::LineDelta(_x, y) => y,
