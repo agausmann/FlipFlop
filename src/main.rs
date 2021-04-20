@@ -6,6 +6,7 @@ use crate::board::{Board, BoardRenderer};
 use crate::viewport::Viewport;
 use crate::wire::{Wire, WireRenderer, WireState};
 use anyhow::Context;
+use cgmath::Vector2;
 use futures_executor::block_on;
 use std::time::{Duration, Instant};
 use wgpu_glyph::ab_glyph::FontArc;
@@ -186,6 +187,13 @@ impl State {
             WindowEvent::CloseRequested => {
                 self.should_close = true;
             }
+            WindowEvent::CursorMoved { position, .. } => {
+                let position = Vector2 {
+                    x: position.x as f32,
+                    y: position.y as f32,
+                };
+                self.viewport.cursor_moved(position);
+            }
             WindowEvent::KeyboardInput { input, .. } => {
                 if let Some(keycode) = input.virtual_keycode {
                     let pressed = match input.state {
@@ -292,7 +300,7 @@ impl State {
         self.glyph_brush.queue(Section {
             screen_position: (0.0, 0.0),
             bounds: (size.width as f32, size.height as f32),
-            text: vec![Text::new(&format!("FPS: {:.0}", self.fps))
+            text: vec![Text::new(&self.debug_text())
                 .with_color([1.0, 1.0, 1.0, 1.0])
                 .with_scale(24.0)],
             ..Default::default()
@@ -318,6 +326,18 @@ impl State {
         self.local_pool.run_until_stalled();
 
         Ok(())
+    }
+
+    fn debug_text(&self) -> String {
+        format!(
+            "FPS: {:.0}\nCursor: {:.0?}\nWorld: {:.2?}\nTile: {:.0?}",
+            self.fps,
+            // this would be less ugly if cgmath vectors implemented From<[_; _]>
+            // instead of Into<[_; _]>
+            <_ as Into<[f32; 2]>>::into(self.viewport.cursor().screen_position),
+            <_ as Into<[f32; 2]>>::into(self.viewport.cursor().world_position),
+            <_ as Into<[f32; 2]>>::into(self.viewport.cursor().tile()),
+        )
     }
 }
 
