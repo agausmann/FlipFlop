@@ -11,6 +11,8 @@ pub struct Camera {
     pub pan_speed: f32,
     pub zoom_speed: f32,
     pub zoom_step: f32,
+    pub min_zoom: f32,
+    pub max_zoom: f32,
 
     pub pan_up: bool,
     pub pan_down: bool,
@@ -29,6 +31,8 @@ impl Camera {
             pan_speed: 500.0,
             zoom_speed: 4.0,
             zoom_step: 1.1,
+            min_zoom: 8.0,
+            max_zoom: 64.0,
 
             pan_up: false,
             pan_down: false,
@@ -63,7 +67,11 @@ impl Camera {
         if self.zoom_out {
             zoom_factor /= self.zoom_speed;
         }
-        self.zoom *= zoom_factor.powf(dt);
+        self.set_zoom(self.zoom * zoom_factor.powf(dt));
+    }
+
+    pub fn set_zoom(&mut self, zoom: f32) {
+        self.zoom = zoom.clamp(self.min_zoom, self.max_zoom);
     }
 }
 

@@ -242,7 +242,7 @@ impl State {
                     MouseScrollDelta::PixelDelta(position) => position.y as f32 / 16.0,
                 };
                 let mut camera = self.viewport.camera_mut();
-                camera.zoom *= camera.zoom_step.powf(delta);
+                camera.set_zoom(camera.zoom * camera.zoom_step.powf(delta));
             }
             WindowEvent::KeyboardInput { input, .. } => {
                 if let Some(keycode) = input.virtual_keycode {
