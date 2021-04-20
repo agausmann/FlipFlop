@@ -11,7 +11,7 @@ use futures_executor::block_on;
 use std::time::{Duration, Instant};
 use wgpu_glyph::ab_glyph::FontArc;
 use wgpu_glyph::{GlyphBrushBuilder, Section, Text};
-use winit::event::{ElementState, Event, VirtualKeyCode, WindowEvent};
+use winit::event::{ElementState, Event, MouseScrollDelta, VirtualKeyCode, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::WindowBuilder;
 
@@ -200,6 +200,14 @@ impl State {
                     y: position.y as f32,
                 };
                 self.viewport.cursor_moved(position);
+            }
+            WindowEvent::MouseWheel { delta, .. } => {
+                let delta = match delta {
+                    MouseScrollDelta::LineDelta(_x, y) => y,
+                    MouseScrollDelta::PixelDelta(position) => position.y as f32 / 16.0,
+                };
+                let mut camera = self.viewport.camera_mut();
+                camera.zoom *= camera.zoom_step.powf(delta);
             }
             WindowEvent::KeyboardInput { input, .. } => {
                 if let Some(keycode) = input.virtual_keycode {

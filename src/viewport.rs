@@ -10,6 +10,7 @@ pub struct Camera {
 
     pub pan_speed: f32,
     pub zoom_speed: f32,
+    pub zoom_step: f32,
 
     pub pan_up: bool,
     pub pan_down: bool,
@@ -27,6 +28,7 @@ impl Camera {
 
             pan_speed: 500.0,
             zoom_speed: 4.0,
+            zoom_step: 1.05,
 
             pan_up: false,
             pan_down: false,
