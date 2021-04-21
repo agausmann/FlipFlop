@@ -25,10 +25,10 @@ the state of their inputs from immediately before the tick, so components'
 updates in the current tick can't affect each other.
 
 Ticks happen repeatedly over time at a regular rate, called the **tick rate**.
-By default, the tick rate is 100 **ticks per second (TPS).** This rate is
+By default, the tick rate is **100 ticks per second (TPS).** This rate is
 inversely related to the tick interval; for example, for a tick rate of 100
-TPS, the tick interval is 1/100 seconds per tick, which we usually write as 10
-**milliseconds per tick (MSPT).**
+TPS, the tick interval is 1/100 seconds per tick, which we usually write as
+**10 milliseconds per tick (MSPT).**
 
 ## Acknowledgements
 
