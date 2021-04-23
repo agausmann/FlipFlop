@@ -312,6 +312,10 @@ impl WireRenderer {
             0..self.instances.len().try_into().expect("too many instances"),
         );
     }
+
+    pub fn wire_count(&self) -> usize {
+        return self.instances.len();
+    }
 }
 
 pub struct Wire {

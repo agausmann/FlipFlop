@@ -25,6 +25,7 @@ const FPS_UPDATE_INTERVAL: Duration = Duration::from_millis(200);
 enum CursorMode {
     Normal,
     Pan { last_position: Vector2<f32> },
+    PlaceWire { start_position: Vector2<f32> },
 }
 
 struct State {
@@ -210,7 +211,6 @@ impl State {
                     y: position.y as f32,
                 };
                 match self.cursor_mode {
-                    CursorMode::Normal => {}
                     CursorMode::Pan { last_position } => {
                         let mut delta = position - last_position;
                         delta.y = -delta.y;
@@ -221,6 +221,7 @@ impl State {
                             last_position: position,
                         };
                     }
+                    _ => {}
                 }
                 self.viewport.cursor_moved(position);
             }
@@ -231,10 +232,29 @@ impl State {
                     };
                     self.window.set_cursor_icon(CursorIcon::Grabbing);
                 }
-                (MouseButton::Middle, ElementState::Released) => {
-                    self.cursor_mode = CursorMode::Normal;
-                    self.window.set_cursor_icon(CursorIcon::Default);
+                (MouseButton::Middle, ElementState::Released) => match self.cursor_mode {
+                    CursorMode::Pan { .. } => {
+                        self.cursor_mode = CursorMode::Normal;
+                        self.window.set_cursor_icon(CursorIcon::Default);
+                    }
+                    _ => {}
+                },
+                (MouseButton::Left, ElementState::Pressed) => {
+                    self.cursor_mode = CursorMode::PlaceWire {
+                        start_position: self.viewport.cursor().tile(),
+                    };
                 }
+                (MouseButton::Left, ElementState::Released) => match self.cursor_mode {
+                    CursorMode::PlaceWire { .. } => {
+                        self.cursor_mode = CursorMode::Normal;
+                        self.preview_wire = self.wire_renderer.insert(&Wire {
+                            cluster_index: 0,
+                            position: self.viewport.cursor().tile().into(),
+                            size: [0.0, 0.0],
+                        });
+                    }
+                    _ => {}
+                },
                 _ => {}
             },
             WindowEvent::MouseWheel { delta, .. } => match self.cursor_mode {
@@ -243,7 +263,7 @@ impl State {
                         MouseScrollDelta::LineDelta(_x, y) => y,
                         MouseScrollDelta::PixelDelta(position) => position.y as f32 / 16.0,
                     };
-                    let mut camera = self.viewport.camera_mut();
+                    let camera = self.viewport.camera_mut();
                     camera.set_zoom(camera.zoom * camera.zoom_step.powf(delta));
                 }
                 _ => {}
@@ -287,14 +307,30 @@ impl State {
         let dt = now - self.last_update;
         self.last_update = now;
         self.viewport.update(dt, &self.window, &self.queue);
-        self.wire_renderer.update(
-            &self.preview_wire,
-            &Wire {
+
+        let preview_wire = match self.cursor_mode {
+            CursorMode::PlaceWire { start_position } => {
+                let delta = self.viewport.cursor().tile() - start_position;
+
+                let size;
+                if delta.x.abs() > delta.y.abs() {
+                    size = [delta.x, 0.0];
+                } else {
+                    size = [0.0, delta.y];
+                }
+                Wire {
+                    cluster_index: 0,
+                    position: start_position.into(),
+                    size,
+                }
+            }
+            _ => Wire {
                 cluster_index: 0,
                 position: self.viewport.cursor().tile().into(),
                 size: [0.0, 0.0],
             },
-        );
+        };
+        self.wire_renderer.update(&self.preview_wire, &preview_wire);
     }
 
     fn redraw(&mut self) -> anyhow::Result<()> {
@@ -392,13 +428,14 @@ impl State {
 
     fn debug_text(&self) -> String {
         format!(
-            "FPS: {:.0}\nCursor: {:.0?}\nWorld: {:.2?}\nTile: {:.0?}",
+            "FPS: {:.0}\nCursor: {:.0?}\nWorld: {:.2?}\nTile: {:.0?}\nWires: {}",
             self.fps,
             // this would be less ugly if cgmath vectors implemented From<[_; _]>
             // instead of Into<[_; _]>
             <_ as Into<[f32; 2]>>::into(self.viewport.cursor().screen_position),
             <_ as Into<[f32; 2]>>::into(self.viewport.cursor().world_position),
             <_ as Into<[f32; 2]>>::into(self.viewport.cursor().tile()),
+            self.wire_renderer.wire_count(),
         )
     }
 }
