@@ -1,4 +1,5 @@
 use crate::viewport::Viewport;
+use crate::GraphicsContext;
 use bytemuck::{Pod, Zeroable};
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
@@ -58,14 +59,6 @@ impl Instance {
     }
 }
 
-//XXX this belongs somewhere else
-#[repr(C)]
-#[derive(Clone, Copy, Pod, Zeroable)]
-struct Camera {
-    pan: [f32; 2],
-    zoom: f32,
-}
-
 const VERTICES: &[Vertex] = &[
     Vertex {
         position: [0.0, 0.0],
@@ -86,13 +79,11 @@ const INDICES: &[u16] = &[0, 1, 2, 0, 2, 3];
 const INSTANCE_BUFFER_SIZE: wgpu::BufferAddress = 1 * 1024 * 1024; // 1MB
 
 pub struct BoardRenderer {
+    gfx: GraphicsContext,
     render_pipeline: wgpu::RenderPipeline,
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
     instance_buffer: wgpu::Buffer,
-    texture: wgpu::Texture,
-    texture_view: wgpu::TextureView,
-    sampler: wgpu::Sampler,
     bind_group: wgpu::BindGroup,
 
     instances: Vec<Instance>,
@@ -102,96 +93,105 @@ pub struct BoardRenderer {
 }
 
 impl BoardRenderer {
-    pub fn new(
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        format: wgpu::TextureFormat,
-        viewport: &Viewport,
-    ) -> Self {
-        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("BoardRenderer.bind_group_layout"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStage::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        multisampled: false,
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStage::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler {
-                        comparison: false,
-                        filtering: true,
-                    },
-                    count: None,
-                },
-            ],
-        });
+    pub fn new(gfx: GraphicsContext, viewport: &Viewport) -> Self {
+        let bind_group_layout =
+            gfx.device
+                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                    label: Some("BoardRenderer.bind_group_layout"),
+                    entries: &[
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 0,
+                            visibility: wgpu::ShaderStage::FRAGMENT,
+                            ty: wgpu::BindingType::Texture {
+                                multisampled: false,
+                                view_dimension: wgpu::TextureViewDimension::D2,
+                                sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                            },
+                            count: None,
+                        },
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 1,
+                            visibility: wgpu::ShaderStage::FRAGMENT,
+                            ty: wgpu::BindingType::Sampler {
+                                comparison: false,
+                                filtering: true,
+                            },
+                            count: None,
+                        },
+                    ],
+                });
 
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("BoardRenderer.pipeline_layout"),
-            bind_group_layouts: &[viewport.bind_group_layout(), &bind_group_layout],
-            push_constant_ranges: &[],
-        });
-        let vertex_module = device.create_shader_module(&wgpu::include_spirv!(concat!(
-            env!("OUT_DIR"),
-            "/shaders/board.vert.spv"
-        )));
-        let fragment_module = device.create_shader_module(&wgpu::include_spirv!(concat!(
-            env!("OUT_DIR"),
-            "/shaders/board.frag.spv"
-        )));
-        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("BoardRenderer.render_pipeline"),
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &vertex_module,
-                entry_point: "main",
-                buffers: &[Vertex::buffer_layout(), Instance::buffer_layout()],
-            },
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Cw,
-                cull_mode: wgpu::CullMode::Back,
-                polygon_mode: wgpu::PolygonMode::Fill,
-            },
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: crate::DEPTH_FORMAT,
-                depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::GreaterEqual,
-                stencil: Default::default(),
-                bias: Default::default(),
-                clamp_depth: false,
-            }),
-            multisample: Default::default(),
-            fragment: Some(wgpu::FragmentState {
-                module: &fragment_module,
-                entry_point: "main",
-                targets: &[wgpu::ColorTargetState {
-                    format,
-                    alpha_blend: wgpu::BlendState::REPLACE,
-                    color_blend: wgpu::BlendState::REPLACE,
-                    write_mask: wgpu::ColorWrite::ALL,
-                }],
-            }),
-        });
-        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("BoardRenderer.vertex_buffer"),
-            contents: bytemuck::cast_slice(VERTICES),
-            usage: wgpu::BufferUsage::VERTEX,
-        });
-        let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("BoardRenderer.index_buffer"),
-            contents: bytemuck::cast_slice(INDICES),
-            usage: wgpu::BufferUsage::INDEX,
-        });
-        let instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        let pipeline_layout = gfx
+            .device
+            .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("BoardRenderer.pipeline_layout"),
+                bind_group_layouts: &[viewport.bind_group_layout(), &bind_group_layout],
+                push_constant_ranges: &[],
+            });
+        let vertex_module = gfx
+            .device
+            .create_shader_module(&wgpu::include_spirv!(concat!(
+                env!("OUT_DIR"),
+                "/shaders/board.vert.spv"
+            )));
+        let fragment_module = gfx
+            .device
+            .create_shader_module(&wgpu::include_spirv!(concat!(
+                env!("OUT_DIR"),
+                "/shaders/board.frag.spv"
+            )));
+        let render_pipeline = gfx
+            .device
+            .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("BoardRenderer.render_pipeline"),
+                layout: Some(&pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &vertex_module,
+                    entry_point: "main",
+                    buffers: &[Vertex::buffer_layout(), Instance::buffer_layout()],
+                },
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleList,
+                    strip_index_format: None,
+                    front_face: wgpu::FrontFace::Cw,
+                    cull_mode: wgpu::CullMode::Back,
+                    polygon_mode: wgpu::PolygonMode::Fill,
+                },
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: gfx.depth_format,
+                    depth_write_enabled: true,
+                    depth_compare: wgpu::CompareFunction::GreaterEqual,
+                    stencil: Default::default(),
+                    bias: Default::default(),
+                    clamp_depth: false,
+                }),
+                multisample: Default::default(),
+                fragment: Some(wgpu::FragmentState {
+                    module: &fragment_module,
+                    entry_point: "main",
+                    targets: &[wgpu::ColorTargetState {
+                        format: gfx.render_format,
+                        alpha_blend: wgpu::BlendState::REPLACE,
+                        color_blend: wgpu::BlendState::REPLACE,
+                        write_mask: wgpu::ColorWrite::ALL,
+                    }],
+                }),
+            });
+        let vertex_buffer = gfx
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("BoardRenderer.vertex_buffer"),
+                contents: bytemuck::cast_slice(VERTICES),
+                usage: wgpu::BufferUsage::VERTEX,
+            });
+        let index_buffer = gfx
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("BoardRenderer.index_buffer"),
+                contents: bytemuck::cast_slice(INDICES),
+                usage: wgpu::BufferUsage::INDEX,
+            });
+        let instance_buffer = gfx.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("BoardRenderer.instance_buffer"),
             size: INSTANCE_BUFFER_SIZE,
             usage: wgpu::BufferUsage::VERTEX | wgpu::BufferUsage::COPY_DST,
@@ -206,7 +206,7 @@ impl BoardRenderer {
             height: board_image.height(),
             ..Default::default()
         };
-        let texture = device.create_texture(&wgpu::TextureDescriptor {
+        let texture = gfx.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("BoardRenderer.texture"),
             size,
             mip_level_count: 1,
@@ -215,7 +215,7 @@ impl BoardRenderer {
             format: wgpu::TextureFormat::Rgba8UnormSrgb,
             usage: wgpu::TextureUsage::SAMPLED | wgpu::TextureUsage::COPY_DST,
         });
-        queue.write_texture(
+        gfx.queue.write_texture(
             wgpu::TextureCopyView {
                 texture: &texture,
                 mip_level: 0,
@@ -230,7 +230,7 @@ impl BoardRenderer {
             size,
         );
         let texture_view = texture.create_view(&Default::default());
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+        let sampler = gfx.device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("BoardRenderer.sampler"),
             address_mode_u: wgpu::AddressMode::Repeat,
             address_mode_v: wgpu::AddressMode::Repeat,
@@ -239,7 +239,7 @@ impl BoardRenderer {
             mipmap_filter: wgpu::FilterMode::Linear,
             ..Default::default()
         });
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        let bind_group = gfx.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("BoardRenderer.bind_group"),
             layout: &bind_group_layout,
             entries: &[
@@ -255,13 +255,11 @@ impl BoardRenderer {
         });
 
         Self {
+            gfx,
             render_pipeline,
             vertex_buffer,
             index_buffer,
             instance_buffer,
-            texture,
-            texture_view,
-            sampler,
             bind_group,
 
             instances: Vec::new(),
@@ -310,16 +308,13 @@ impl BoardRenderer {
         }
     }
 
-    pub fn draw<'a>(
-        &'a mut self,
-        viewport: &'a Viewport,
-        queue: &wgpu::Queue,
-        render_pass: &mut wgpu::RenderPass<'a>,
-    ) {
+    pub fn draw<'a>(&'a mut self, viewport: &'a Viewport, render_pass: &mut wgpu::RenderPass<'a>) {
         if self.buffer_update {
             self.buffer_update = false;
             let src_bytes: &[u8] = bytemuck::cast_slice(&self.instances);
-            queue.write_buffer(&self.instance_buffer, 0, src_bytes);
+            self.gfx
+                .queue
+                .write_buffer(&self.instance_buffer, 0, src_bytes);
         }
 
         render_pass.set_pipeline(&self.render_pipeline);

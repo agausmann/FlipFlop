@@ -1,6 +1,6 @@
-mod board;
-mod viewport;
-mod wire;
+pub mod board;
+pub mod viewport;
+pub mod wire;
 
 use crate::board::{Board, BoardRenderer};
 use crate::viewport::Viewport;
@@ -8,6 +8,7 @@ use crate::wire::{Wire, WireRenderer, WireState};
 use anyhow::Context;
 use cgmath::Vector2;
 use futures_executor::block_on;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use wgpu_glyph::ab_glyph::FontArc;
 use wgpu_glyph::{GlyphBrushBuilder, Section, Text};
@@ -17,9 +18,6 @@ use winit::event::{
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::{CursorIcon, Window, WindowBuilder};
 
-const RENDER_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Bgra8UnormSrgb;
-const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
-
 const FPS_UPDATE_INTERVAL: Duration = Duration::from_millis(200);
 
 enum CursorMode {
@@ -28,66 +26,19 @@ enum CursorMode {
     PlaceWire { start_position: Vector2<f32> },
 }
 
-struct State {
-    window: Window,
-    instance: wgpu::Instance,
-    surface: wgpu::Surface,
-    adapter: wgpu::Adapter,
-    device: wgpu::Device,
-    queue: wgpu::Queue,
-    swap_chain: wgpu::SwapChain,
-    depth_texture: wgpu::Texture,
-    depth_texture_view: wgpu::TextureView,
-    glyph_brush: wgpu_glyph::GlyphBrush<()>,
-    staging_belt: wgpu::util::StagingBelt,
-    local_pool: futures_executor::LocalPool,
-    local_spawner: futures_executor::LocalSpawner,
-    viewport: Viewport,
-    board_renderer: BoardRenderer,
-    wire_renderer: WireRenderer,
-    preview_wire: wire::Handle,
-    frames_since: Instant,
-    frame_count: usize,
-    fps: f32,
-    should_close: bool,
-    last_update: Instant,
-    cursor_mode: CursorMode,
+pub type GraphicsContext = Arc<GraphicsContextInner>;
+
+pub struct GraphicsContextInner {
+    pub window: Window,
+    pub surface: wgpu::Surface,
+    pub device: wgpu::Device,
+    pub queue: wgpu::Queue,
+
+    pub render_format: wgpu::TextureFormat,
+    pub depth_format: wgpu::TextureFormat,
 }
 
-fn create_swap_chain(
-    device: &wgpu::Device,
-    surface: &wgpu::Surface,
-    window: &Window,
-) -> wgpu::SwapChain {
-    device.create_swap_chain(
-        &surface,
-        &wgpu::SwapChainDescriptor {
-            usage: wgpu::TextureUsage::RENDER_ATTACHMENT,
-            format: RENDER_FORMAT,
-            width: window.inner_size().width,
-            height: window.inner_size().height,
-            //present_mode: wgpu::PresentMode::Fifo,
-            present_mode: wgpu::PresentMode::Mailbox,
-        },
-    )
-}
-fn create_depth_texture(device: &wgpu::Device, window: &Window) -> wgpu::Texture {
-    device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("depth_texture"),
-        size: wgpu::Extent3d {
-            width: window.inner_size().width,
-            height: window.inner_size().height,
-            depth: 1,
-        },
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        format: DEPTH_FORMAT,
-        usage: wgpu::TextureUsage::RENDER_ATTACHMENT | wgpu::TextureUsage::SAMPLED,
-    })
-}
-
-impl State {
+impl GraphicsContextInner {
     async fn new(window: Window) -> anyhow::Result<Self> {
         let instance = wgpu::Instance::new(wgpu::BackendBit::PRIMARY);
         let surface = unsafe { instance.create_surface(&window) };
@@ -109,19 +60,89 @@ impl State {
             )
             .await
             .context("Failed to open device")?;
-        let swap_chain = create_swap_chain(&device, &surface, &window);
-        let depth_texture = create_depth_texture(&device, &window);
+
+        // XXX does this produce incompatible formats on different backends?
+        let render_format = adapter.get_swap_chain_preferred_format(&surface);
+        let depth_format = wgpu::TextureFormat::Depth32Float;
+
+        Ok(Self {
+            window,
+            surface,
+            device,
+            queue,
+            render_format,
+            depth_format,
+        })
+    }
+}
+
+struct State {
+    gfx: GraphicsContext,
+    swap_chain: wgpu::SwapChain,
+    depth_texture: wgpu::Texture,
+    depth_texture_view: wgpu::TextureView,
+    glyph_brush: wgpu_glyph::GlyphBrush<()>,
+    staging_belt: wgpu::util::StagingBelt,
+    local_pool: futures_executor::LocalPool,
+    local_spawner: futures_executor::LocalSpawner,
+    viewport: Viewport,
+    board_renderer: BoardRenderer,
+    wire_renderer: WireRenderer,
+    preview_wire: wire::Handle,
+    frames_since: Instant,
+    frame_count: usize,
+    fps: f32,
+    should_close: bool,
+    last_update: Instant,
+    cursor_mode: CursorMode,
+}
+
+fn create_swap_chain(gfx: &GraphicsContext) -> wgpu::SwapChain {
+    gfx.device.create_swap_chain(
+        &gfx.surface,
+        &wgpu::SwapChainDescriptor {
+            usage: wgpu::TextureUsage::RENDER_ATTACHMENT,
+            format: gfx.render_format,
+            width: gfx.window.inner_size().width,
+            height: gfx.window.inner_size().height,
+            //present_mode: wgpu::PresentMode::Fifo,
+            present_mode: wgpu::PresentMode::Mailbox,
+        },
+    )
+}
+fn create_depth_texture(gfx: &GraphicsContext) -> wgpu::Texture {
+    gfx.device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("depth_texture"),
+        size: wgpu::Extent3d {
+            width: gfx.window.inner_size().width,
+            height: gfx.window.inner_size().height,
+            depth: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: gfx.depth_format,
+        usage: wgpu::TextureUsage::RENDER_ATTACHMENT | wgpu::TextureUsage::SAMPLED,
+    })
+}
+
+impl State {
+    async fn new(window: Window) -> anyhow::Result<Self> {
+        let gfx = Arc::new(GraphicsContextInner::new(window).await?);
+        let swap_chain = create_swap_chain(&gfx);
+        let depth_texture = create_depth_texture(&gfx);
         let depth_texture_view = depth_texture.create_view(&Default::default());
 
         let fira_sans = FontArc::try_from_slice(include_bytes!("fonts/FiraSans-Regular.ttf"))?;
-        let glyph_brush = GlyphBrushBuilder::using_font(fira_sans).build(&device, RENDER_FORMAT);
+        let glyph_brush =
+            GlyphBrushBuilder::using_font(fira_sans).build(&gfx.device, gfx.render_format);
         let staging_belt = wgpu::util::StagingBelt::new(1024);
         let local_pool = futures_executor::LocalPool::new();
         let local_spawner = local_pool.spawner();
 
-        let viewport = Viewport::new(&device);
+        let viewport = Viewport::new(gfx.clone());
 
-        let mut board_renderer = BoardRenderer::new(&device, &queue, RENDER_FORMAT, &viewport);
+        let mut board_renderer = BoardRenderer::new(gfx.clone(), &viewport);
         board_renderer.insert(&Board {
             position: [0.0, 0.0],
             size: [2.0, 2.0],
@@ -147,7 +168,7 @@ impl State {
             z_index: 0,
         });
 
-        let mut wire_renderer = WireRenderer::new(&device, RENDER_FORMAT, &viewport);
+        let mut wire_renderer = WireRenderer::new(gfx.clone(), &viewport);
 
         wire_renderer.insert(&Wire {
             cluster_index: 1,
@@ -171,15 +192,10 @@ impl State {
         });
         let mut wire_state = WireState::default();
         wire_state.states[0] = 0x00000002;
-        wire_renderer.update_wire_state(&queue, &wire_state);
+        wire_renderer.update_wire_state(&wire_state);
 
         Ok(Self {
-            window,
-            instance,
-            surface,
-            adapter,
-            device,
-            queue,
+            gfx,
             swap_chain,
             depth_texture,
             depth_texture_view,
@@ -230,12 +246,12 @@ impl State {
                     self.cursor_mode = CursorMode::Pan {
                         last_position: self.viewport.cursor().screen_position,
                     };
-                    self.window.set_cursor_icon(CursorIcon::Grabbing);
+                    self.gfx.window.set_cursor_icon(CursorIcon::Grabbing);
                 }
                 (MouseButton::Middle, ElementState::Released) => match self.cursor_mode {
                     CursorMode::Pan { .. } => {
                         self.cursor_mode = CursorMode::Normal;
-                        self.window.set_cursor_icon(CursorIcon::Default);
+                        self.gfx.window.set_cursor_icon(CursorIcon::Default);
                     }
                     _ => {}
                 },
@@ -306,7 +322,7 @@ impl State {
         let now = Instant::now();
         let dt = now - self.last_update;
         self.last_update = now;
-        self.viewport.update(dt, &self.window, &self.queue);
+        self.viewport.update(dt);
 
         let preview_wire = match self.cursor_mode {
             CursorMode::PlaceWire { start_position } => {
@@ -347,9 +363,9 @@ impl State {
             match self.swap_chain.get_current_frame() {
                 Ok(frame) => break frame.output,
                 Err(wgpu::SwapChainError::Lost) | Err(wgpu::SwapChainError::Outdated) => {
-                    self.swap_chain = create_swap_chain(&self.device, &self.surface, &self.window);
+                    self.swap_chain = create_swap_chain(&self.gfx);
 
-                    self.depth_texture = create_depth_texture(&self.device, &self.window);
+                    self.depth_texture = create_depth_texture(&self.gfx);
                     self.depth_texture_view = self.depth_texture.create_view(&Default::default());
                 }
                 Err(wgpu::SwapChainError::Timeout) => {
@@ -361,7 +377,7 @@ impl State {
             }
         };
 
-        let mut encoder = self.device.create_command_encoder(&Default::default());
+        let mut encoder = self.gfx.device.create_command_encoder(&Default::default());
 
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -388,13 +404,11 @@ impl State {
                     stencil_ops: None,
                 }),
             });
-            self.board_renderer
-                .draw(&self.viewport, &self.queue, &mut render_pass);
-            self.wire_renderer
-                .draw(&self.viewport, &self.queue, &mut render_pass);
+            self.board_renderer.draw(&self.viewport, &mut render_pass);
+            self.wire_renderer.draw(&self.viewport, &mut render_pass);
         }
 
-        let size = self.window.inner_size();
+        let size = self.gfx.window.inner_size();
         self.glyph_brush.queue(Section {
             screen_position: (0.0, 0.0),
             bounds: (size.width as f32, size.height as f32),
@@ -405,7 +419,7 @@ impl State {
         });
         self.glyph_brush
             .draw_queued(
-                &self.device,
+                &self.gfx.device,
                 &mut self.staging_belt,
                 &mut encoder,
                 &frame.view,
@@ -415,7 +429,7 @@ impl State {
             .expect("Text draw error");
         self.staging_belt.finish();
 
-        self.queue.submit(std::iter::once(encoder.finish()));
+        self.gfx.queue.submit(std::iter::once(encoder.finish()));
 
         use futures_util::task::SpawnExt;
         self.local_spawner
@@ -458,7 +472,7 @@ fn main() -> anyhow::Result<()> {
                 state.handle_window_event(event);
             }
             Event::MainEventsCleared => {
-                state.window.request_redraw();
+                state.gfx.window.request_redraw();
             }
             _ => {}
         }

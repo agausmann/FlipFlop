@@ -1,8 +1,8 @@
+use crate::GraphicsContext;
 use bytemuck::{Pod, Zeroable};
 use cgmath::{ElementWise, Matrix4, SquareMatrix, Vector2, Vector4, Zero};
 use std::time::Duration;
 use wgpu::util::DeviceExt;
-use winit::window::Window;
 
 pub struct Camera {
     pub pan: Vector2<f32>,
@@ -88,10 +88,10 @@ impl Cursor {
         }
     }
 
-    fn update(&mut self, window: &Window, camera: &Camera) {
+    fn update(&mut self, gfx: &GraphicsContext, camera: &Camera) {
         let size = Vector2 {
-            x: window.inner_size().width as f32,
-            y: window.inner_size().height as f32,
+            x: gfx.window.inner_size().width as f32,
+            y: gfx.window.inner_size().height as f32,
         };
         self.world_position = (self.screen_position - size / 2.0)
             .mul_element_wise(Vector2::new(1.0, -1.0))
@@ -108,6 +108,7 @@ impl Cursor {
 }
 
 pub struct Viewport {
+    gfx: GraphicsContext,
     uniform_buffer: wgpu::Buffer,
     bind_group_layout: wgpu::BindGroupLayout,
     bind_group: wgpu::BindGroup,
@@ -116,26 +117,30 @@ pub struct Viewport {
 }
 
 impl Viewport {
-    pub fn new(device: &wgpu::Device) -> Self {
-        let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Viewport.uniform_buffer"),
-            contents: bytemuck::bytes_of(&Uniforms::default()),
-            usage: wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
-        });
-        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Viewport.bind_group_layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStage::VERTEX,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-        });
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+    pub fn new(gfx: GraphicsContext) -> Self {
+        let uniform_buffer = gfx
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Viewport.uniform_buffer"),
+                contents: bytemuck::bytes_of(&Uniforms::default()),
+                usage: wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
+            });
+        let bind_group_layout =
+            gfx.device
+                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                    label: Some("Viewport.bind_group_layout"),
+                    entries: &[wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStage::VERTEX,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    }],
+                });
+        let bind_group = gfx.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Viewport.bind_group"),
             layout: &bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
@@ -145,6 +150,7 @@ impl Viewport {
         });
 
         Self {
+            gfx,
             uniform_buffer,
             bind_group_layout,
             bind_group,
@@ -153,15 +159,15 @@ impl Viewport {
         }
     }
 
-    pub fn update(&mut self, dt: Duration, window: &Window, queue: &wgpu::Queue) {
+    pub fn update(&mut self, dt: Duration) {
         self.camera.update(dt);
-        self.cursor.update(&window, &self.camera);
+        self.cursor.update(&self.gfx, &self.camera);
 
         let size = Vector2::new(
-            window.inner_size().width as f32,
-            window.inner_size().height as f32,
+            self.gfx.window.inner_size().width as f32,
+            self.gfx.window.inner_size().height as f32,
         );
-        queue.write_buffer(
+        self.gfx.queue.write_buffer(
             &self.uniform_buffer,
             0,
             bytemuck::bytes_of(&Uniforms::new(size, &self.camera)),
