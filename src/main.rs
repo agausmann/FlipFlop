@@ -6,8 +6,8 @@ use crate::board::{Board, BoardRenderer};
 use crate::viewport::Viewport;
 use crate::wire::{Wire, WireRenderer, WireState};
 use anyhow::Context;
-use cgmath::Vector2;
 use futures_executor::block_on;
+use glam::Vec2;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use wgpu_glyph::ab_glyph::FontArc;
@@ -22,8 +22,8 @@ const FPS_UPDATE_INTERVAL: Duration = Duration::from_millis(200);
 
 enum CursorMode {
     Normal,
-    Pan { last_position: Vector2<f32> },
-    PlaceWire { start_position: Vector2<f32> },
+    Pan { last_position: Vec2 },
+    PlaceWire { start_position: Vec2 },
 }
 
 pub type GraphicsContext = Arc<GraphicsContextInner>;
@@ -222,10 +222,7 @@ impl State {
                 self.should_close = true;
             }
             WindowEvent::CursorMoved { position, .. } => {
-                let position = Vector2 {
-                    x: position.x as f32,
-                    y: position.y as f32,
-                };
+                let position = Vec2::new(position.x as f32, position.y as f32);
                 match self.cursor_mode {
                     CursorMode::Pan { last_position } => {
                         let mut delta = position - last_position;

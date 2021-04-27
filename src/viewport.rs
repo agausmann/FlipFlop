@@ -1,11 +1,11 @@
 use crate::GraphicsContext;
 use bytemuck::{Pod, Zeroable};
-use cgmath::{ElementWise, Matrix4, SquareMatrix, Vector2, Vector4, Zero};
+use glam::{Mat4, Vec2, Vec3, Vec4};
 use std::time::Duration;
 use wgpu::util::DeviceExt;
 
 pub struct Camera {
-    pub pan: Vector2<f32>,
+    pub pan: Vec2,
     pub zoom: f32,
 
     pub pan_speed: f32,
@@ -25,7 +25,7 @@ pub struct Camera {
 impl Camera {
     fn new() -> Self {
         Self {
-            pan: Vector2::zero(),
+            pan: Vec2::ZERO,
             zoom: 16.0,
 
             pan_speed: 500.0,
@@ -45,18 +45,18 @@ impl Camera {
 
     fn update(&mut self, dt: Duration) {
         let dt = dt.as_secs_f32();
-        let mut pan_delta = Vector2::zero();
+        let mut pan_delta = Vec2::ZERO;
         if self.pan_up {
-            pan_delta += Vector2::unit_y();
+            pan_delta += Vec2::Y;
         }
         if self.pan_down {
-            pan_delta -= Vector2::unit_y();
+            pan_delta -= Vec2::Y;
         }
         if self.pan_right {
-            pan_delta += Vector2::unit_x();
+            pan_delta += Vec2::X;
         }
         if self.pan_left {
-            pan_delta -= Vector2::unit_x();
+            pan_delta -= Vec2::X;
         }
         self.pan += dt * self.pan_speed / self.zoom * pan_delta;
 
@@ -76,34 +76,29 @@ impl Camera {
 }
 
 pub struct Cursor {
-    pub screen_position: Vector2<f32>,
-    pub world_position: Vector2<f32>,
+    pub screen_position: Vec2,
+    pub world_position: Vec2,
 }
 
 impl Cursor {
     fn new() -> Self {
         Self {
-            screen_position: Vector2::zero(),
-            world_position: Vector2::zero(),
+            screen_position: Vec2::ZERO,
+            world_position: Vec2::ZERO,
         }
     }
 
     fn update(&mut self, gfx: &GraphicsContext, camera: &Camera) {
-        let size = Vector2 {
-            x: gfx.window.inner_size().width as f32,
-            y: gfx.window.inner_size().height as f32,
-        };
-        self.world_position = (self.screen_position - size / 2.0)
-            .mul_element_wise(Vector2::new(1.0, -1.0))
-            / camera.zoom
-            + camera.pan;
+        let size = Vec2::new(
+            gfx.window.inner_size().width as f32,
+            gfx.window.inner_size().height as f32,
+        );
+        self.world_position =
+            (self.screen_position - size / 2.0) * Vec2::new(1.0, -1.0) / camera.zoom + camera.pan;
     }
 
-    pub fn tile(&self) -> Vector2<f32> {
-        Vector2 {
-            x: self.world_position.x.floor(),
-            y: self.world_position.y.floor(),
-        }
+    pub fn tile(&self) -> Vec2 {
+        Vec2::new(self.world_position.x.floor(), self.world_position.y.floor())
     }
 }
 
@@ -163,7 +158,7 @@ impl Viewport {
         self.camera.update(dt);
         self.cursor.update(&self.gfx, &self.camera);
 
-        let size = Vector2::new(
+        let size = Vec2::new(
             self.gfx.window.inner_size().width as f32,
             self.gfx.window.inner_size().height as f32,
         );
@@ -174,7 +169,7 @@ impl Viewport {
         );
     }
 
-    pub fn cursor_moved(&mut self, position: Vector2<f32>) {
+    pub fn cursor_moved(&mut self, position: Vec2) {
         self.cursor.screen_position = position;
     }
 
@@ -204,21 +199,21 @@ struct Uniforms {
 impl Uniforms {
     fn default() -> Self {
         Self {
-            view_proj: Matrix4::identity().into(),
+            view_proj: Mat4::IDENTITY.to_cols_array_2d(),
         }
     }
 
-    fn new(size: Vector2<f32>, camera: &Camera) -> Self {
-        let proj = Matrix4 {
-            x: 2.0 / size.x * Vector4::unit_x(),
-            y: 2.0 / size.y * Vector4::unit_y(),
-            z: Vector4::unit_z(),
-            w: Vector4::unit_w(),
-        };
-        let view = Matrix4::from_nonuniform_scale(camera.zoom, camera.zoom, 1.0)
-            * Matrix4::from_translation(-camera.pan.extend(0.0));
+    fn new(size: Vec2, camera: &Camera) -> Self {
+        let proj = Mat4::from_cols(
+            2.0 / size.x * Vec4::X,
+            2.0 / size.y * Vec4::Y,
+            Vec4::Z,
+            Vec4::W,
+        );
+        let view = Mat4::from_scale(Vec3::new(camera.zoom, camera.zoom, 1.0))
+            * Mat4::from_translation(-camera.pan.extend(0.0));
         Self {
-            view_proj: (proj * view).into(),
+            view_proj: (proj * view).to_cols_array_2d(),
         }
     }
 }
