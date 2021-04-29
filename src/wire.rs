@@ -280,10 +280,12 @@ impl WireRenderer {
             let removed_handle = self.instance_to_handle.swap_remove(index);
             debug_assert!(removed_handle == *handle);
 
-            // Update handle association for the instance that was swapped to this location.
-            let affected_handle = &self.instance_to_handle[index];
-            self.handle_to_instance
-                .insert(affected_handle.clone(), index);
+            if index != self.instances.len() {
+                // Update handle association for the instance that was swapped to this location.
+                let affected_handle = &self.instance_to_handle[index];
+                self.handle_to_instance
+                    .insert(affected_handle.clone(), index);
+            }
 
             true
         } else {
