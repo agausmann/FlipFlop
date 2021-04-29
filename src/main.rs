@@ -1,15 +1,17 @@
 pub mod board;
+pub mod counter;
 pub mod viewport;
 pub mod wire;
 
 use crate::board::{Board, BoardRenderer};
+use crate::counter::Counter;
 use crate::viewport::Viewport;
 use crate::wire::{Pin, Wire, WireRenderer};
 use anyhow::Context;
 use futures_executor::block_on;
 use glam::{IVec2, Vec2};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use wgpu_glyph::ab_glyph::FontArc;
 use wgpu_glyph::{GlyphBrushBuilder, Section, Text};
 use winit::event::{
@@ -17,8 +19,6 @@ use winit::event::{
 };
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::{CursorIcon, Window, WindowBuilder};
-
-const FPS_UPDATE_INTERVAL: Duration = Duration::from_millis(200);
 
 enum CursorMode {
     Normal,
@@ -95,9 +95,7 @@ struct State {
     viewport: Viewport,
     board_renderer: BoardRenderer,
     wire_renderer: WireRenderer,
-    frames_since: Instant,
-    frame_count: usize,
-    fps: f32,
+    frame_counter: Counter,
     should_close: bool,
     last_update: Instant,
     cursor_mode: CursorMode,
@@ -249,9 +247,7 @@ impl State {
             viewport,
             board_renderer,
             wire_renderer,
-            frames_since: Instant::now(),
-            frame_count: 0,
-            fps: 0.0,
+            frame_counter: Counter::new(),
             should_close: false,
             last_update: Instant::now(),
             cursor_mode: CursorMode::Normal,
@@ -440,14 +436,7 @@ impl State {
     }
 
     fn redraw(&mut self) -> anyhow::Result<()> {
-        let this_render = Instant::now();
-        let interval = this_render - self.frames_since;
-        if interval >= FPS_UPDATE_INTERVAL {
-            self.frames_since = this_render;
-            self.fps = (self.frame_count as f32) / interval.as_secs_f32();
-            self.frame_count = 0;
-        }
-        self.frame_count += 1;
+        self.frame_counter.tick();
 
         let frame = loop {
             match self.swap_chain.get_current_frame() {
@@ -533,7 +522,7 @@ impl State {
     fn debug_text(&self) -> String {
         format!(
             "FPS: {:.0}\nCursor: {:.0?}\nWorld: {:.2?}\nTile: {:?}\nWires: {}",
-            self.fps,
+            self.frame_counter.rate(),
             <(f32, f32)>::from(self.viewport.cursor().screen_position),
             <(f32, f32)>::from(self.viewport.cursor().world_position),
             <(i32, i32)>::from(self.viewport.cursor().tile()),
