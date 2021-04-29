@@ -4,7 +4,7 @@ pub mod wire;
 
 use crate::board::{Board, BoardRenderer};
 use crate::viewport::Viewport;
-use crate::wire::{Pin, Wire, WireRenderer, WireState};
+use crate::wire::{Pin, Wire, WireRenderer};
 use anyhow::Context;
 use futures_executor::block_on;
 use glam::{IVec2, Vec2};
@@ -178,68 +178,64 @@ impl State {
 
         wire_renderer.insert(
             &Pin {
-                cluster_index: 1,
                 position: IVec2::new(0, 0),
+                is_powered: true,
             }
             .into(),
         );
         wire_renderer.insert(
             &Wire {
-                cluster_index: 1,
                 position: IVec2::new(0, 0),
                 size: IVec2::new(1, 0),
+                is_powered: true,
             }
             .into(),
         );
         wire_renderer.insert(
             &Pin {
-                cluster_index: 1,
                 position: IVec2::new(1, 0),
+                is_powered: true,
             }
             .into(),
         );
         wire_renderer.insert(
             &Wire {
-                cluster_index: 1,
                 position: IVec2::new(0, 0),
                 size: IVec2::new(0, -2),
+                is_powered: true,
             }
             .into(),
         );
         wire_renderer.insert(
             &Pin {
-                cluster_index: 1,
                 position: IVec2::new(0, -2),
+                is_powered: true,
             }
             .into(),
         );
 
         wire_renderer.insert(
             &Pin {
-                cluster_index: 2,
                 position: IVec2::new(0, 2),
+                is_powered: false,
             }
             .into(),
         );
         wire_renderer.insert(
             &Wire {
-                cluster_index: 2,
                 position: IVec2::new(0, 2),
                 size: IVec2::new(-2, 0),
+                is_powered: false,
             }
             .into(),
         );
         wire_renderer.insert(
             &Pin {
-                cluster_index: 2,
                 position: IVec2::new(-2, 2),
+                is_powered: false,
             }
             .into(),
         );
-
-        let mut wire_state = WireState::default();
-        wire_state.states[0] = 0x00000002;
-        wire_renderer.update_wire_state(&wire_state);
 
         Ok(Self {
             gfx,
@@ -302,23 +298,23 @@ impl State {
                     let start_position = self.viewport.cursor().tile();
                     let start_pin = self.wire_renderer.insert(
                         &Pin {
-                            cluster_index: 0,
                             position: start_position,
+                            is_powered: false,
                         }
                         .into(),
                     );
                     let end_pin = self.wire_renderer.insert(
                         &Pin {
-                            cluster_index: 0,
                             position: start_position,
+                            is_powered: false,
                         }
                         .into(),
                     );
                     let wire = self.wire_renderer.insert(
                         &Wire {
-                            cluster_index: 0,
                             position: start_position,
                             size: IVec2::ZERO,
+                            is_powered: false,
                         }
                         .into(),
                     );
@@ -331,19 +327,15 @@ impl State {
                 }
                 (MouseButton::Left, ElementState::Released) => match &self.cursor_mode {
                     CursorMode::PlaceWire {
-                        /*
                         start_pin,
                         end_pin,
                         wire,
-                        */
                         ..
                     } => {
-                        self.cursor_mode = CursorMode::Normal;
-                        /*
                         self.wire_renderer.remove(start_pin);
                         self.wire_renderer.remove(end_pin);
                         self.wire_renderer.remove(wire);
-                        */
+                        self.cursor_mode = CursorMode::Normal;
                     }
                     _ => {}
                 },
@@ -420,25 +412,25 @@ impl State {
                 self.wire_renderer.update(
                     start_pin,
                     &Pin {
-                        cluster_index: 0,
                         position: start_position,
+                        is_powered: false,
                     }
                     .into(),
                 );
                 self.wire_renderer.update(
                     end_pin,
                     &Pin {
-                        cluster_index: 0,
                         position: end_position,
+                        is_powered: false,
                     }
                     .into(),
                 );
                 self.wire_renderer.update(
                     wire,
                     &Wire {
-                        cluster_index: 0,
                         position: start_position,
                         size,
+                        is_powered: false,
                     }
                     .into(),
                 );

@@ -30,13 +30,13 @@ impl Vertex {
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 struct Instance {
-    cluster_index: u32,
     position: [f32; 2],
     size: [f32; 2],
+    is_powered: u32,
 }
 
 static INSTANCE_ATTRIBUTES: Lazy<[wgpu::VertexAttribute; 3]> =
-    Lazy::new(|| wgpu::vertex_attr_array![1 => Uint, 2 => Float2, 3 => Float2]);
+    Lazy::new(|| wgpu::vertex_attr_array![1 => Float2, 2 => Float2, 3 => Uint]);
 
 impl Instance {
     fn buffer_layout() -> wgpu::VertexBufferLayout<'static> {
@@ -49,9 +49,9 @@ impl Instance {
 
     fn new(wire: &WireRect) -> Self {
         Self {
-            cluster_index: wire.cluster_index,
             position: wire.position.into(),
             size: wire.size.into(),
+            is_powered: wire.is_powered as u32,
         }
     }
 }
@@ -87,7 +87,6 @@ pub struct WireRenderer {
     bind_group: wgpu::BindGroup,
 
     wire_color_buffer: wgpu::Buffer,
-    wire_state_buffer: wgpu::Buffer,
 
     instances: Vec<Instance>,
     instance_to_handle: Vec<Handle>,
@@ -101,28 +100,16 @@ impl WireRenderer {
             gfx.device
                 .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                     label: Some("WireRenderer.bind_group_layout"),
-                    entries: &[
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 0,
-                            visibility: wgpu::ShaderStage::VERTEX,
-                            ty: wgpu::BindingType::Buffer {
-                                ty: wgpu::BufferBindingType::Uniform,
-                                has_dynamic_offset: false,
-                                min_binding_size: None,
-                            },
-                            count: None,
+                    entries: &[wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStage::VERTEX,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
                         },
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 1,
-                            visibility: wgpu::ShaderStage::VERTEX,
-                            ty: wgpu::BindingType::Buffer {
-                                ty: wgpu::BufferBindingType::Uniform,
-                                has_dynamic_offset: false,
-                                min_binding_size: None,
-                            },
-                            count: None,
-                        },
-                    ],
+                        count: None,
+                    }],
                 });
 
         let pipeline_layout = gfx
@@ -211,27 +198,14 @@ impl WireRenderer {
                 contents: bytemuck::bytes_of(&WireColor::default()),
                 usage: wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
             });
-        let wire_state_buffer = gfx
-            .device
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("WireRenderer.wire_state_buffer"),
-                contents: bytemuck::bytes_of(&WireState::default()),
-                usage: wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
-            });
 
         let bind_group = gfx.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("WireRenderer.bind_group"),
             layout: &bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wire_color_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wire_state_buffer.as_entire_binding(),
-                },
-            ],
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wire_color_buffer.as_entire_binding(),
+            }],
         });
 
         Self {
@@ -243,7 +217,6 @@ impl WireRenderer {
             bind_group,
 
             wire_color_buffer,
-            wire_state_buffer,
 
             instances: Vec::new(),
             instance_to_handle: Vec::new(),
@@ -299,12 +272,6 @@ impl WireRenderer {
             .write_buffer(&self.wire_color_buffer, 0, bytemuck::bytes_of(wire_color));
     }
 
-    pub fn update_wire_state(&mut self, wire_state: &WireState) {
-        self.gfx
-            .queue
-            .write_buffer(&self.wire_state_buffer, 0, bytemuck::bytes_of(wire_state));
-    }
-
     pub fn draw<'a>(&'a mut self, viewport: &'a Viewport, render_pass: &mut wgpu::RenderPass<'a>) {
         if self.buffer_update {
             self.buffer_update = false;
@@ -333,15 +300,15 @@ impl WireRenderer {
 }
 
 pub struct WireRect {
-    pub cluster_index: u32,
     pub position: Vec2,
     pub size: Vec2,
+    pub is_powered: bool,
 }
 
 pub struct Wire {
-    pub cluster_index: u32,
     pub position: IVec2,
     pub size: IVec2,
+    pub is_powered: bool,
 }
 
 impl From<Wire> for WireRect {
@@ -350,24 +317,24 @@ impl From<Wire> for WireRect {
         let abs_size = wire.size.abs();
         let abs_position = wire.position - (abs_size - wire.size) / 2;
         Self {
-            cluster_index: wire.cluster_index,
             position: abs_position.as_f32() + Vec2::splat(0.5 - WIRE_RADIUS),
             size: abs_size.as_f32() + Vec2::splat(2.0 * WIRE_RADIUS),
+            is_powered: wire.is_powered,
         }
     }
 }
 
 pub struct Pin {
-    pub cluster_index: u32,
     pub position: IVec2,
+    pub is_powered: bool,
 }
 
 impl From<Pin> for WireRect {
     fn from(pin: Pin) -> Self {
         Self {
-            cluster_index: pin.cluster_index,
             position: pin.position.as_f32() + Vec2::splat(0.5 - PIN_RADIUS),
             size: Vec2::splat(2.0 * PIN_RADIUS),
+            is_powered: pin.is_powered,
         }
     }
 }
@@ -385,18 +352,6 @@ impl Default for WireColor {
             off_color: [0.0, 0.0, 0.0, 1.0],
             on_color: [0.8, 0.0, 0.0, 1.0],
         }
-    }
-}
-
-#[derive(Debug, Clone, Copy, Pod, Zeroable)]
-#[repr(C)]
-pub struct WireState {
-    pub states: [u32; 1024],
-}
-
-impl Default for WireState {
-    fn default() -> Self {
-        Self { states: [0; 1024] }
     }
 }
 
