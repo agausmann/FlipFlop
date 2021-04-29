@@ -1,6 +1,7 @@
 use crate::viewport::Viewport;
 use crate::GraphicsContext;
 use bytemuck::{Pod, Zeroable};
+use glam::IVec2;
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::convert::TryInto;
@@ -51,8 +52,8 @@ impl Instance {
 
     fn new(board: &Board) -> Self {
         Self {
-            position: board.position,
-            size: board.size,
+            position: board.position.as_f32().into(),
+            size: board.size.as_f32().into(),
             color: board.color,
             z_index: (board.z_index as f32) / (MAX_Z_INDEX as f32),
         }
@@ -332,8 +333,8 @@ impl BoardRenderer {
 }
 
 pub struct Board {
-    pub position: [f32; 2],
-    pub size: [f32; 2],
+    pub position: IVec2,
+    pub size: IVec2,
     pub color: [f32; 4],
     pub z_index: u32,
 }

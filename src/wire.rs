@@ -1,6 +1,7 @@
 use crate::viewport::Viewport;
 use crate::GraphicsContext;
 use bytemuck::{Pod, Zeroable};
+use glam::{IVec2, Vec2};
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::convert::TryInto;
@@ -10,12 +11,11 @@ use wgpu::util::DeviceExt;
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
 struct Vertex {
-    position_const: [f32; 2],
-    position_lin: [f32; 2],
+    position: [f32; 2],
 }
 
-static VERTEX_ATTRIBUTES: Lazy<[wgpu::VertexAttribute; 2]> =
-    Lazy::new(|| wgpu::vertex_attr_array![0 => Float2, 1 => Float2]);
+static VERTEX_ATTRIBUTES: Lazy<[wgpu::VertexAttribute; 1]> =
+    Lazy::new(|| wgpu::vertex_attr_array![0 => Float2]);
 
 impl Vertex {
     fn buffer_layout() -> wgpu::VertexBufferLayout<'static> {
@@ -36,7 +36,7 @@ struct Instance {
 }
 
 static INSTANCE_ATTRIBUTES: Lazy<[wgpu::VertexAttribute; 3]> =
-    Lazy::new(|| wgpu::vertex_attr_array![2 => Uint, 3 => Float2, 4 => Float2]);
+    Lazy::new(|| wgpu::vertex_attr_array![1 => Uint, 2 => Float2, 3 => Float2]);
 
 impl Instance {
     fn buffer_layout() -> wgpu::VertexBufferLayout<'static> {
@@ -47,40 +47,30 @@ impl Instance {
         }
     }
 
-    fn new(wire: &Wire) -> Self {
-        // Wire sizing only works for non-negative sizes.
-        // Ensure size is positive, and adjust position accordingly.
-        let abs_size = [wire.size[0].abs(), wire.size[1].abs()];
-        let abs_position = [
-            wire.position[0] - (abs_size[0] - wire.size[0]) / 2.0,
-            wire.position[1] - (abs_size[1] - wire.size[1]) / 2.0,
-        ];
+    fn new(wire: &WireRect) -> Self {
         Self {
             cluster_index: wire.cluster_index,
-            position: abs_position,
-            size: abs_size,
+            position: wire.position.into(),
+            size: wire.size.into(),
         }
     }
 }
 
 const WIRE_RADIUS: f32 = 1.0 / 16.0;
+const PIN_RADIUS: f32 = 2.0 / 16.0;
 
 const VERTICES: &[Vertex] = &[
     Vertex {
-        position_const: [0.5 - WIRE_RADIUS, 0.5 - WIRE_RADIUS],
-        position_lin: [0.0, 0.0],
+        position: [0.0, 0.0],
     },
     Vertex {
-        position_const: [0.5 - WIRE_RADIUS, 0.5 + WIRE_RADIUS],
-        position_lin: [0.0, 1.0],
+        position: [0.0, 1.0],
     },
     Vertex {
-        position_const: [0.5 + WIRE_RADIUS, 0.5 + WIRE_RADIUS],
-        position_lin: [1.0, 1.0],
+        position: [1.0, 1.0],
     },
     Vertex {
-        position_const: [0.5 + WIRE_RADIUS, 0.5 - WIRE_RADIUS],
-        position_lin: [1.0, 0.0],
+        position: [1.0, 0.0],
     },
 ];
 
@@ -262,13 +252,13 @@ impl WireRenderer {
         }
     }
 
-    pub fn insert(&mut self, wire: &Wire) -> Handle {
+    pub fn insert(&mut self, wire: &WireRect) -> Handle {
         let handle = Handle::new();
         self.update(&handle, wire);
         handle
     }
 
-    pub fn update(&mut self, handle: &Handle, wire: &Wire) {
+    pub fn update(&mut self, handle: &Handle, wire: &WireRect) {
         self.buffer_update = true;
         if let Some(&index) = self.handle_to_instance.get(handle) {
             self.instances[index] = Instance::new(wire);
@@ -340,10 +330,44 @@ impl WireRenderer {
     }
 }
 
+pub struct WireRect {
+    pub cluster_index: u32,
+    pub position: Vec2,
+    pub size: Vec2,
+}
+
 pub struct Wire {
     pub cluster_index: u32,
-    pub position: [f32; 2],
-    pub size: [f32; 2],
+    pub position: IVec2,
+    pub size: IVec2,
+}
+
+impl From<Wire> for WireRect {
+    fn from(wire: Wire) -> Self {
+        // Ensure size is positive so WIRE_RADIUS offset will work correctly.
+        let abs_size = wire.size.abs();
+        let abs_position = wire.position - (abs_size - wire.size) / 2;
+        Self {
+            cluster_index: wire.cluster_index,
+            position: abs_position.as_f32() + Vec2::splat(0.5 - WIRE_RADIUS),
+            size: abs_size.as_f32() + Vec2::splat(2.0 * WIRE_RADIUS),
+        }
+    }
+}
+
+pub struct Pin {
+    pub cluster_index: u32,
+    pub position: IVec2,
+}
+
+impl From<Pin> for WireRect {
+    fn from(pin: Pin) -> Self {
+        Self {
+            cluster_index: pin.cluster_index,
+            position: pin.position.as_f32() + Vec2::splat(0.5 - PIN_RADIUS),
+            size: Vec2::splat(2.0 * PIN_RADIUS),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]

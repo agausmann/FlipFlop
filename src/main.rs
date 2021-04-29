@@ -4,10 +4,10 @@ pub mod wire;
 
 use crate::board::{Board, BoardRenderer};
 use crate::viewport::Viewport;
-use crate::wire::{Wire, WireRenderer, WireState};
+use crate::wire::{Pin, Wire, WireRenderer, WireState};
 use anyhow::Context;
 use futures_executor::block_on;
-use glam::Vec2;
+use glam::{IVec2, Vec2};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use wgpu_glyph::ab_glyph::FontArc;
@@ -23,7 +23,7 @@ const FPS_UPDATE_INTERVAL: Duration = Duration::from_millis(200);
 enum CursorMode {
     Normal,
     Pan { last_position: Vec2 },
-    PlaceWire { start_position: Vec2 },
+    PlaceWire { start_position: IVec2 },
 }
 
 pub type GraphicsContext = Arc<GraphicsContextInner>;
@@ -144,52 +144,101 @@ impl State {
 
         let mut board_renderer = BoardRenderer::new(gfx.clone(), &viewport);
         board_renderer.insert(&Board {
-            position: [0.0, 0.0],
-            size: [2.0, 2.0],
+            position: IVec2::new(0, 0),
+            size: IVec2::new(2, 2),
             color: [0.2, 0.3, 0.1, 1.0],
             z_index: 1,
         });
         board_renderer.insert(&Board {
-            position: [-4.0, -2.0],
-            size: [2.0, 1.0],
+            position: IVec2::new(-4, -2),
+            size: IVec2::new(2, 1),
             color: [0.3, 0.1, 0.2, 1.0],
             z_index: 1,
         });
         board_renderer.insert(&Board {
-            position: [0.0, -4.0],
-            size: [2.0, 2.0],
+            position: IVec2::new(0, -4),
+            size: IVec2::new(2, 2),
             color: [0.3, 0.2, 0.1, 1.0],
             z_index: 1,
         });
         board_renderer.insert(&Board {
-            position: [-1.0e4, -1.0e4],
-            size: [2.0e4, 2.0e4],
+            position: IVec2::new(-10_000, -10_000),
+            size: IVec2::new(20_000, 20_000),
             color: [0.1, 0.1, 0.1, 1.0],
             z_index: 0,
         });
 
         let mut wire_renderer = WireRenderer::new(gfx.clone(), &viewport);
 
-        wire_renderer.insert(&Wire {
-            cluster_index: 1,
-            position: [0.0, 0.0],
-            size: [1.0, 0.0],
-        });
-        wire_renderer.insert(&Wire {
-            cluster_index: 2,
-            position: [0.0, 2.0],
-            size: [-2.0, 0.0],
-        });
-        wire_renderer.insert(&Wire {
-            cluster_index: 1,
-            position: [0.0, 0.0],
-            size: [0.0, -2.0],
-        });
-        let preview_wire = wire_renderer.insert(&Wire {
-            cluster_index: 0,
-            position: [0.0, 0.0],
-            size: [0.0, 0.0],
-        });
+        wire_renderer.insert(
+            &Pin {
+                cluster_index: 1,
+                position: IVec2::new(0, 0),
+            }
+            .into(),
+        );
+        wire_renderer.insert(
+            &Wire {
+                cluster_index: 1,
+                position: IVec2::new(0, 0),
+                size: IVec2::new(1, 0),
+            }
+            .into(),
+        );
+        wire_renderer.insert(
+            &Pin {
+                cluster_index: 1,
+                position: IVec2::new(1, 0),
+            }
+            .into(),
+        );
+        wire_renderer.insert(
+            &Wire {
+                cluster_index: 1,
+                position: IVec2::new(0, 0),
+                size: IVec2::new(0, -2),
+            }
+            .into(),
+        );
+        wire_renderer.insert(
+            &Pin {
+                cluster_index: 1,
+                position: IVec2::new(0, -2),
+            }
+            .into(),
+        );
+
+        wire_renderer.insert(
+            &Pin {
+                cluster_index: 2,
+                position: IVec2::new(0, 2),
+            }
+            .into(),
+        );
+        wire_renderer.insert(
+            &Wire {
+                cluster_index: 2,
+                position: IVec2::new(0, 2),
+                size: IVec2::new(-2, 0),
+            }
+            .into(),
+        );
+        wire_renderer.insert(
+            &Pin {
+                cluster_index: 2,
+                position: IVec2::new(-2, 2),
+            }
+            .into(),
+        );
+
+        let preview_wire = wire_renderer.insert(
+            &Wire {
+                cluster_index: 0,
+                position: IVec2::ZERO,
+                size: IVec2::ZERO,
+            }
+            .into(),
+        );
         let mut wire_state = WireState::default();
         wire_state.states[0] = 0x00000002;
         wire_renderer.update_wire_state(&wire_state);
@@ -260,11 +309,14 @@ impl State {
                 (MouseButton::Left, ElementState::Released) => match self.cursor_mode {
                     CursorMode::PlaceWire { .. } => {
                         self.cursor_mode = CursorMode::Normal;
-                        self.preview_wire = self.wire_renderer.insert(&Wire {
-                            cluster_index: 0,
-                            position: self.viewport.cursor().tile().into(),
-                            size: [0.0, 0.0],
-                        });
+                        self.preview_wire = self.wire_renderer.insert(
+                            &Wire {
+                                cluster_index: 0,
+                                position: self.viewport.cursor().tile().into(),
+                                size: IVec2::ZERO,
+                            }
+                            .into(),
+                        );
                     }
                     _ => {}
                 },
@@ -327,23 +379,24 @@ impl State {
 
                 let size;
                 if delta.x.abs() > delta.y.abs() {
-                    size = [delta.x, 0.0];
+                    size = delta * IVec2::X;
                 } else {
-                    size = [0.0, delta.y];
+                    size = delta * IVec2::Y;
                 }
                 Wire {
                     cluster_index: 0,
-                    position: start_position.into(),
+                    position: start_position,
                     size,
                 }
             }
             _ => Wire {
                 cluster_index: 0,
-                position: self.viewport.cursor().tile().into(),
-                size: [0.0, 0.0],
+                position: self.viewport.cursor().tile(),
+                size: IVec2::ZERO,
             },
         };
-        self.wire_renderer.update(&self.preview_wire, &preview_wire);
+        self.wire_renderer
+            .update(&self.preview_wire, &preview_wire.into());
     }
 
     fn redraw(&mut self) -> anyhow::Result<()> {
@@ -439,13 +492,11 @@ impl State {
 
     fn debug_text(&self) -> String {
         format!(
-            "FPS: {:.0}\nCursor: {:.0?}\nWorld: {:.2?}\nTile: {:.0?}\nWires: {}",
+            "FPS: {:.0}\nCursor: {:.0?}\nWorld: {:.2?}\nTile: {:?}\nWires: {}",
             self.fps,
-            // this would be less ugly if cgmath vectors implemented From<[_; _]>
-            // instead of Into<[_; _]>
-            <_ as Into<[f32; 2]>>::into(self.viewport.cursor().screen_position),
-            <_ as Into<[f32; 2]>>::into(self.viewport.cursor().world_position),
-            <_ as Into<[f32; 2]>>::into(self.viewport.cursor().tile()),
+            <(f32, f32)>::from(self.viewport.cursor().screen_position),
+            <(f32, f32)>::from(self.viewport.cursor().world_position),
+            <(i32, i32)>::from(self.viewport.cursor().tile()),
             self.wire_renderer.wire_count(),
         )
     }

@@ -1,6 +1,6 @@
 use crate::GraphicsContext;
 use bytemuck::{Pod, Zeroable};
-use glam::{Mat4, Vec2, Vec3, Vec4};
+use glam::{IVec2, Mat4, Vec2, Vec3, Vec4};
 use std::time::Duration;
 use wgpu::util::DeviceExt;
 
@@ -97,8 +97,8 @@ impl Cursor {
             (self.screen_position - size / 2.0) * Vec2::new(1.0, -1.0) / camera.zoom + camera.pan;
     }
 
-    pub fn tile(&self) -> Vec2 {
-        Vec2::new(self.world_position.x.floor(), self.world_position.y.floor())
+    pub fn tile(&self) -> IVec2 {
+        self.world_position.floor().as_i32()
     }
 }
 
