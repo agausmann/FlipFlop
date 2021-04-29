@@ -22,8 +22,15 @@ const FPS_UPDATE_INTERVAL: Duration = Duration::from_millis(200);
 
 enum CursorMode {
     Normal,
-    Pan { last_position: Vec2 },
-    PlaceWire { start_position: IVec2 },
+    Pan {
+        last_position: Vec2,
+    },
+    PlaceWire {
+        start_position: IVec2,
+        start_pin: wire::Handle,
+        end_pin: wire::Handle,
+        wire: wire::Handle,
+    },
 }
 
 pub type GraphicsContext = Arc<GraphicsContextInner>;
@@ -88,7 +95,6 @@ struct State {
     viewport: Viewport,
     board_renderer: BoardRenderer,
     wire_renderer: WireRenderer,
-    preview_wire: wire::Handle,
     frames_since: Instant,
     frame_count: usize,
     fps: f32,
@@ -231,14 +237,6 @@ impl State {
             .into(),
         );
 
-        let preview_wire = wire_renderer.insert(
-            &Wire {
-                cluster_index: 0,
-                position: IVec2::ZERO,
-                size: IVec2::ZERO,
-            }
-            .into(),
-        );
         let mut wire_state = WireState::default();
         wire_state.states[0] = 0x00000002;
         wire_renderer.update_wire_state(&wire_state);
@@ -255,7 +253,6 @@ impl State {
             viewport,
             board_renderer,
             wire_renderer,
-            preview_wire,
             frames_since: Instant::now(),
             frame_count: 0,
             fps: 0.0,
@@ -272,9 +269,9 @@ impl State {
             }
             WindowEvent::CursorMoved { position, .. } => {
                 let position = Vec2::new(position.x as f32, position.y as f32);
-                match self.cursor_mode {
+                match &self.cursor_mode {
                     CursorMode::Pan { last_position } => {
-                        let mut delta = position - last_position;
+                        let mut delta = position - *last_position;
                         delta.y = -delta.y;
                         let camera = self.viewport.camera_mut();
                         camera.pan -= delta / camera.zoom;
@@ -302,27 +299,57 @@ impl State {
                     _ => {}
                 },
                 (MouseButton::Left, ElementState::Pressed) => {
+                    let start_position = self.viewport.cursor().tile();
+                    let start_pin = self.wire_renderer.insert(
+                        &Pin {
+                            cluster_index: 0,
+                            position: start_position,
+                        }
+                        .into(),
+                    );
+                    let end_pin = self.wire_renderer.insert(
+                        &Pin {
+                            cluster_index: 0,
+                            position: start_position,
+                        }
+                        .into(),
+                    );
+                    let wire = self.wire_renderer.insert(
+                        &Wire {
+                            cluster_index: 0,
+                            position: start_position,
+                            size: IVec2::ZERO,
+                        }
+                        .into(),
+                    );
                     self.cursor_mode = CursorMode::PlaceWire {
-                        start_position: self.viewport.cursor().tile(),
+                        start_position,
+                        start_pin,
+                        end_pin,
+                        wire,
                     };
                 }
-                (MouseButton::Left, ElementState::Released) => match self.cursor_mode {
-                    CursorMode::PlaceWire { .. } => {
+                (MouseButton::Left, ElementState::Released) => match &self.cursor_mode {
+                    CursorMode::PlaceWire {
+                        /*
+                        start_pin,
+                        end_pin,
+                        wire,
+                        */
+                        ..
+                    } => {
                         self.cursor_mode = CursorMode::Normal;
-                        self.preview_wire = self.wire_renderer.insert(
-                            &Wire {
-                                cluster_index: 0,
-                                position: self.viewport.cursor().tile().into(),
-                                size: IVec2::ZERO,
-                            }
-                            .into(),
-                        );
+                        /*
+                        self.wire_renderer.remove(start_pin);
+                        self.wire_renderer.remove(end_pin);
+                        self.wire_renderer.remove(wire);
+                        */
                     }
                     _ => {}
                 },
                 _ => {}
             },
-            WindowEvent::MouseWheel { delta, .. } => match self.cursor_mode {
+            WindowEvent::MouseWheel { delta, .. } => match &self.cursor_mode {
                 CursorMode::Normal => {
                     let delta = match delta {
                         MouseScrollDelta::LineDelta(_x, y) => y,
@@ -373,8 +400,13 @@ impl State {
         self.last_update = now;
         self.viewport.update(dt);
 
-        let preview_wire = match self.cursor_mode {
-            CursorMode::PlaceWire { start_position } => {
+        match &self.cursor_mode {
+            &CursorMode::PlaceWire {
+                start_position,
+                ref start_pin,
+                ref end_pin,
+                ref wire,
+            } => {
                 let delta = self.viewport.cursor().tile() - start_position;
 
                 let size;
@@ -383,20 +415,36 @@ impl State {
                 } else {
                     size = delta * IVec2::Y;
                 }
-                Wire {
-                    cluster_index: 0,
-                    position: start_position,
-                    size,
-                }
+                let end_position = start_position + size;
+
+                self.wire_renderer.update(
+                    start_pin,
+                    &Pin {
+                        cluster_index: 0,
+                        position: start_position,
+                    }
+                    .into(),
+                );
+                self.wire_renderer.update(
+                    end_pin,
+                    &Pin {
+                        cluster_index: 0,
+                        position: end_position,
+                    }
+                    .into(),
+                );
+                self.wire_renderer.update(
+                    wire,
+                    &Wire {
+                        cluster_index: 0,
+                        position: start_position,
+                        size,
+                    }
+                    .into(),
+                );
             }
-            _ => Wire {
-                cluster_index: 0,
-                position: self.viewport.cursor().tile(),
-                size: IVec2::ZERO,
-            },
-        };
-        self.wire_renderer
-            .update(&self.preview_wire, &preview_wire.into());
+            _ => {}
+        }
     }
 
     fn redraw(&mut self) -> anyhow::Result<()> {
