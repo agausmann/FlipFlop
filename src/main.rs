@@ -1,9 +1,11 @@
 pub mod board;
+pub mod circuit;
 pub mod counter;
 pub mod viewport;
 pub mod wire;
 
 use crate::board::{Board, BoardRenderer};
+use crate::circuit::Circuit;
 use crate::counter::Counter;
 use crate::viewport::Viewport;
 use crate::wire::{Pin, Wire, WireRenderer};
@@ -25,8 +27,9 @@ enum CursorMode {
     Pan {
         last_position: Vec2,
     },
-    PlaceWire {
+    Place {
         start_position: IVec2,
+        end_position: IVec2,
         start_pin: wire::Handle,
         end_pin: wire::Handle,
         wire: wire::Handle,
@@ -99,6 +102,7 @@ struct State {
     should_close: bool,
     last_update: Instant,
     cursor_mode: CursorMode,
+    circuit: Circuit,
 }
 
 fn create_swap_chain(gfx: &GraphicsContext) -> wgpu::SwapChain {
@@ -183,8 +187,8 @@ impl State {
         );
         wire_renderer.insert(
             &Wire {
-                position: IVec2::new(0, 0),
-                size: IVec2::new(1, 0),
+                start: IVec2::new(0, 0),
+                end: IVec2::new(1, 0),
                 is_powered: true,
             }
             .into(),
@@ -198,8 +202,8 @@ impl State {
         );
         wire_renderer.insert(
             &Wire {
-                position: IVec2::new(0, 0),
-                size: IVec2::new(0, -2),
+                start: IVec2::new(0, 0),
+                end: IVec2::new(0, -2),
                 is_powered: true,
             }
             .into(),
@@ -221,8 +225,8 @@ impl State {
         );
         wire_renderer.insert(
             &Wire {
-                position: IVec2::new(0, 2),
-                size: IVec2::new(-2, 0),
+                start: IVec2::new(0, 2),
+                end: IVec2::new(-2, 2),
                 is_powered: false,
             }
             .into(),
@@ -234,6 +238,7 @@ impl State {
             }
             .into(),
         );
+        let circuit = Circuit::new(gfx.clone(), &viewport);
 
         Ok(Self {
             gfx,
@@ -251,6 +256,7 @@ impl State {
             should_close: false,
             last_update: Instant::now(),
             cursor_mode: CursorMode::Normal,
+            circuit,
         })
     }
 
@@ -308,30 +314,46 @@ impl State {
                     );
                     let wire = self.wire_renderer.insert(
                         &Wire {
-                            position: start_position,
-                            size: IVec2::ZERO,
+                            start: start_position,
+                            end: start_position,
                             is_powered: false,
                         }
                         .into(),
                     );
-                    self.cursor_mode = CursorMode::PlaceWire {
+                    self.cursor_mode = CursorMode::Place {
                         start_position,
+                        end_position: start_position,
                         start_pin,
                         end_pin,
                         wire,
                     };
                 }
                 (MouseButton::Left, ElementState::Released) => match &self.cursor_mode {
-                    CursorMode::PlaceWire {
-                        start_pin,
-                        end_pin,
-                        wire,
-                        ..
+                    &CursorMode::Place {
+                        start_position,
+                        end_position,
+                        ref start_pin,
+                        ref end_pin,
+                        ref wire,
                     } => {
                         self.wire_renderer.remove(start_pin);
                         self.wire_renderer.remove(end_pin);
                         self.wire_renderer.remove(wire);
+
+                        if start_position == end_position {
+                            self.circuit.place_pin(start_position);
+                        } else {
+                            self.circuit.place_wire(start_position, end_position);
+                        }
+
                         self.cursor_mode = CursorMode::Normal;
+                    }
+                    _ => {}
+                },
+                (MouseButton::Right, ElementState::Pressed) => match &self.cursor_mode {
+                    &CursorMode::Normal => {
+                        let position = self.viewport.cursor().tile();
+                        self.circuit.delete_all_at(position);
                     }
                     _ => {}
                 },
@@ -388,9 +410,10 @@ impl State {
         self.last_update = now;
         self.viewport.update(dt);
 
-        match &self.cursor_mode {
-            &CursorMode::PlaceWire {
+        match &mut self.cursor_mode {
+            &mut CursorMode::Place {
                 start_position,
+                ref mut end_position,
                 ref start_pin,
                 ref end_pin,
                 ref wire,
@@ -403,7 +426,7 @@ impl State {
                 } else {
                     size = delta * IVec2::Y;
                 }
-                let end_position = start_position + size;
+                *end_position = start_position + size;
 
                 self.wire_renderer.update(
                     start_pin,
@@ -416,7 +439,7 @@ impl State {
                 self.wire_renderer.update(
                     end_pin,
                     &Pin {
-                        position: end_position,
+                        position: *end_position,
                         is_powered: false,
                     }
                     .into(),
@@ -424,8 +447,8 @@ impl State {
                 self.wire_renderer.update(
                     wire,
                     &Wire {
-                        position: start_position,
-                        size,
+                        start: start_position,
+                        end: *end_position,
                         is_powered: false,
                     }
                     .into(),
@@ -484,6 +507,7 @@ impl State {
                 }),
             });
             self.board_renderer.draw(&self.viewport, &mut render_pass);
+            self.circuit.draw(&self.viewport, &mut render_pass);
             self.wire_renderer.draw(&self.viewport, &mut render_pass);
         }
 
@@ -520,12 +544,15 @@ impl State {
     }
 
     fn debug_text(&self) -> String {
+        let tile = self.circuit.tile(self.viewport.cursor().tile());
         format!(
-            "FPS: {:.0}\nCursor: {:.0?}\nWorld: {:.2?}\nTile: {:?}\nWires: {}",
+            "FPS: {:.0}\nCursor: {:.0?}\nWorld: {:.2?}\nTile: {:?}\nPin: {:?}\nWires: {:?}\nWire count: {}",
             self.frame_counter.rate(),
             <(f32, f32)>::from(self.viewport.cursor().screen_position),
             <(f32, f32)>::from(self.viewport.cursor().world_position),
             <(i32, i32)>::from(self.viewport.cursor().tile()),
+            tile.and_then(|tile| tile.pin),
+            tile.map(|tile| tile.wires),
             self.wire_renderer.wire_count(),
         )
     }

@@ -317,16 +317,19 @@ pub struct WireRect {
 }
 
 pub struct Wire {
-    pub position: IVec2,
-    pub size: IVec2,
+    pub start: IVec2,
+    pub end: IVec2,
     pub is_powered: bool,
 }
 
 impl From<Wire> for WireRect {
     fn from(wire: Wire) -> Self {
+        let position = wire.start;
+        let size = wire.end - wire.start;
+
         // Ensure size is positive so WIRE_RADIUS offset will work correctly.
-        let abs_size = wire.size.abs();
-        let abs_position = wire.position - (abs_size - wire.size) / 2;
+        let abs_size = size.abs();
+        let abs_position = position - (abs_size - size) / 2;
         Self {
             position: abs_position.as_f32() + Vec2::splat(0.5 - WIRE_RADIUS),
             size: abs_size.as_f32() + Vec2::splat(2.0 * WIRE_RADIUS),
