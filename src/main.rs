@@ -197,7 +197,16 @@ impl State {
                                 ..
                             } => {
                                 if start_position == end_position {
-                                    self.circuit.place_pin(start_position);
+                                    if self
+                                        .circuit
+                                        .tile(start_position)
+                                        .and_then(|tile| tile.pin)
+                                        .is_some()
+                                    {
+                                        self.circuit.delete_pin(start_position);
+                                    } else {
+                                        self.circuit.place_pin(start_position);
+                                    }
                                 } else {
                                     self.circuit.place_wire(
                                         start_position,

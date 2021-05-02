@@ -88,6 +88,34 @@ impl Circuit {
         self.insert_pin(position);
     }
 
+    pub fn delete_pin(&mut self, position: IVec2) {
+        if let Some(&tile) = self.tiles.get(&position) {
+            if let Some(pin_id) = tile.pin {
+                self.remove_pin(pin_id);
+            }
+            let mut endpoints = Vec::new();
+            for &wire_id in tile.wires.iter().flatten() {
+                let wire = self.remove_wire(wire_id);
+                if wire.start == position {
+                    endpoints.push(wire.end);
+                } else if wire.end == position {
+                    endpoints.push(wire.start);
+                } else {
+                    panic!("wire is not connected to this tile");
+                }
+            }
+            for i in 1..endpoints.len() {
+                for j in 0..i {
+                    if endpoints[i].x == endpoints[j].x
+                        || endpoints[i].y == endpoints[j].y
+                    {
+                        self.insert_wire(endpoints[i], endpoints[j]);
+                    }
+                }
+            }
+        }
+    }
+
     pub fn delete_all_at(&mut self, position: IVec2) {
         if let Some(&tile) = self.tiles.get(&position) {
             if let Some(pin_id) = tile.pin {
