@@ -1,12 +1,14 @@
 pub mod board;
 pub mod circuit;
 pub mod counter;
+pub mod cursor;
 pub mod viewport;
 pub mod wire;
 
 use crate::board::{Board, BoardRenderer};
 use crate::circuit::Circuit;
 use crate::counter::Counter;
+use crate::cursor::{CursorManager, CursorMode};
 use crate::viewport::Viewport;
 use crate::wire::{Pin, Wire, WireRenderer};
 use anyhow::Context;
@@ -21,20 +23,6 @@ use winit::event::{
 };
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::{CursorIcon, Window, WindowBuilder};
-
-enum CursorMode {
-    Normal,
-    Pan {
-        last_position: Vec2,
-    },
-    Place {
-        start_position: IVec2,
-        end_position: IVec2,
-        start_pin: wire::Handle,
-        end_pin: wire::Handle,
-        wire: wire::Handle,
-    },
-}
 
 pub type GraphicsContext = Arc<GraphicsContextInner>;
 
@@ -101,8 +89,8 @@ struct State {
     frame_counter: Counter,
     should_close: bool,
     last_update: Instant,
-    cursor_mode: CursorMode,
     circuit: Circuit,
+    cursor_manager: CursorManager,
 }
 
 fn create_swap_chain(gfx: &GraphicsContext) -> wgpu::SwapChain {
@@ -239,6 +227,7 @@ impl State {
             .into(),
         );
         let circuit = Circuit::new(gfx.clone(), &viewport);
+        let cursor_manager = CursorManager::new(gfx.clone(), &viewport);
 
         Ok(Self {
             gfx,
@@ -255,8 +244,8 @@ impl State {
             frame_counter: Counter::new(),
             should_close: false,
             last_update: Instant::now(),
-            cursor_mode: CursorMode::Normal,
             circuit,
+            cursor_manager,
         })
     }
 
@@ -267,99 +256,54 @@ impl State {
             }
             WindowEvent::CursorMoved { position, .. } => {
                 let position = Vec2::new(position.x as f32, position.y as f32);
-                match &self.cursor_mode {
-                    CursorMode::Pan { last_position } => {
-                        let mut delta = position - *last_position;
-                        delta.y = -delta.y;
-                        let camera = self.viewport.camera_mut();
-                        camera.pan -= delta / camera.zoom;
-
-                        self.cursor_mode = CursorMode::Pan {
-                            last_position: position,
-                        };
-                    }
-                    _ => {}
-                }
                 self.viewport.cursor_moved(position);
             }
             WindowEvent::MouseInput { button, state, .. } => match (button, state) {
                 (MouseButton::Middle, ElementState::Pressed) => {
-                    self.cursor_mode = CursorMode::Pan {
-                        last_position: self.viewport.cursor().screen_position,
-                    };
+                    self.cursor_manager.start_pan(&self.viewport);
                     self.gfx.window.set_cursor_icon(CursorIcon::Grabbing);
                 }
-                (MouseButton::Middle, ElementState::Released) => match self.cursor_mode {
-                    CursorMode::Pan { .. } => {
-                        self.cursor_mode = CursorMode::Normal;
-                        self.gfx.window.set_cursor_icon(CursorIcon::Default);
+                (MouseButton::Middle, ElementState::Released) => {
+                    match self.cursor_manager.current_mode() {
+                        CursorMode::Pan { .. } => {
+                            self.cursor_manager.end();
+                            self.gfx.window.set_cursor_icon(CursorIcon::Default);
+                        }
+                        _ => {}
                     }
-                    _ => {}
-                },
-                (MouseButton::Left, ElementState::Pressed) => {
-                    let start_position = self.viewport.cursor().tile();
-                    let start_pin = self.wire_renderer.insert(
-                        &Pin {
-                            position: start_position,
-                            is_powered: false,
-                        }
-                        .into(),
-                    );
-                    let end_pin = self.wire_renderer.insert(
-                        &Pin {
-                            position: start_position,
-                            is_powered: false,
-                        }
-                        .into(),
-                    );
-                    let wire = self.wire_renderer.insert(
-                        &Wire {
-                            start: start_position,
-                            end: start_position,
-                            is_powered: false,
-                        }
-                        .into(),
-                    );
-                    self.cursor_mode = CursorMode::Place {
-                        start_position,
-                        end_position: start_position,
-                        start_pin,
-                        end_pin,
-                        wire,
-                    };
                 }
-                (MouseButton::Left, ElementState::Released) => match &self.cursor_mode {
-                    &CursorMode::Place {
-                        start_position,
-                        end_position,
-                        ref start_pin,
-                        ref end_pin,
-                        ref wire,
-                    } => {
-                        self.wire_renderer.remove(start_pin);
-                        self.wire_renderer.remove(end_pin);
-                        self.wire_renderer.remove(wire);
-
-                        if start_position == end_position {
-                            self.circuit.place_pin(start_position);
-                        } else {
-                            self.circuit.place_wire(start_position, end_position);
+                (MouseButton::Left, ElementState::Pressed) => {
+                    self.cursor_manager.start_place(&self.viewport);
+                }
+                (MouseButton::Left, ElementState::Released) => {
+                    match self.cursor_manager.current_mode() {
+                        &CursorMode::Place {
+                            start_position,
+                            end_position,
+                            ..
+                        } => {
+                            if start_position == end_position {
+                                self.circuit.place_pin(start_position);
+                            } else {
+                                self.circuit.place_wire(start_position, end_position);
+                            }
+                            self.cursor_manager.end();
                         }
-
-                        self.cursor_mode = CursorMode::Normal;
+                        _ => {}
                     }
-                    _ => {}
-                },
-                (MouseButton::Right, ElementState::Pressed) => match &self.cursor_mode {
-                    &CursorMode::Normal => {
-                        let position = self.viewport.cursor().tile();
-                        self.circuit.delete_all_at(position);
+                }
+                (MouseButton::Right, ElementState::Pressed) => {
+                    match &self.cursor_manager.current_mode() {
+                        &CursorMode::Normal => {
+                            let position = self.viewport.cursor().tile();
+                            self.circuit.delete_all_at(position);
+                        }
+                        _ => {}
                     }
-                    _ => {}
-                },
+                }
                 _ => {}
             },
-            WindowEvent::MouseWheel { delta, .. } => match &self.cursor_mode {
+            WindowEvent::MouseWheel { delta, .. } => match &self.cursor_manager.current_mode() {
                 CursorMode::Normal => {
                     let delta = match delta {
                         MouseScrollDelta::LineDelta(_x, y) => y,
@@ -408,54 +352,9 @@ impl State {
         let now = Instant::now();
         let dt = now - self.last_update;
         self.last_update = now;
+
+        self.cursor_manager.update(&mut self.viewport);
         self.viewport.update(dt);
-
-        match &mut self.cursor_mode {
-            &mut CursorMode::Place {
-                start_position,
-                ref mut end_position,
-                ref start_pin,
-                ref end_pin,
-                ref wire,
-            } => {
-                let delta = self.viewport.cursor().tile() - start_position;
-
-                let size;
-                if delta.x.abs() > delta.y.abs() {
-                    size = delta * IVec2::X;
-                } else {
-                    size = delta * IVec2::Y;
-                }
-                *end_position = start_position + size;
-
-                self.wire_renderer.update(
-                    start_pin,
-                    &Pin {
-                        position: start_position,
-                        is_powered: false,
-                    }
-                    .into(),
-                );
-                self.wire_renderer.update(
-                    end_pin,
-                    &Pin {
-                        position: *end_position,
-                        is_powered: false,
-                    }
-                    .into(),
-                );
-                self.wire_renderer.update(
-                    wire,
-                    &Wire {
-                        start: start_position,
-                        end: *end_position,
-                        is_powered: false,
-                    }
-                    .into(),
-                );
-            }
-            _ => {}
-        }
     }
 
     fn redraw(&mut self) -> anyhow::Result<()> {
@@ -509,6 +408,7 @@ impl State {
             self.board_renderer.draw(&self.viewport, &mut render_pass);
             self.circuit.draw(&self.viewport, &mut render_pass);
             self.wire_renderer.draw(&self.viewport, &mut render_pass);
+            self.cursor_manager.draw(&self.viewport, &mut render_pass);
         }
 
         let size = self.gfx.window.inner_size();
@@ -546,14 +446,13 @@ impl State {
     fn debug_text(&self) -> String {
         let tile = self.circuit.tile(self.viewport.cursor().tile());
         format!(
-            "FPS: {:.0}\nCursor: {:.0?}\nWorld: {:.2?}\nTile: {:?}\nPin: {:?}\nWires: {:?}\nWire count: {}",
+            "FPS: {:.0}\nCursor: {:.0?}\nWorld: {:.2?}\nTile: {:?}\nPin: {:?}\nWires: {:?}",
             self.frame_counter.rate(),
             <(f32, f32)>::from(self.viewport.cursor().screen_position),
             <(f32, f32)>::from(self.viewport.cursor().world_position),
             <(i32, i32)>::from(self.viewport.cursor().tile()),
             tile.and_then(|tile| tile.pin),
             tile.map(|tile| tile.wires),
-            self.wire_renderer.wire_count(),
         )
     }
 }
