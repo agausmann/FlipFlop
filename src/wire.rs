@@ -38,13 +38,14 @@ struct Instance {
     is_powered: u32,
 }
 
-static INSTANCE_ATTRIBUTES: Lazy<[wgpu::VertexAttribute; 3]> = Lazy::new(|| {
-    wgpu::vertex_attr_array![
-        1 => Float32x2,
-        2 => Float32x2,
-        3 => Uint32,
-    ]
-});
+static INSTANCE_ATTRIBUTES: Lazy<[wgpu::VertexAttribute; 3]> =
+    Lazy::new(|| {
+        wgpu::vertex_attr_array![
+            1 => Float32x2,
+            2 => Float32x2,
+            3 => Uint32,
+        ]
+    });
 
 impl Instance {
     fn buffer_layout() -> wgpu::VertexBufferLayout<'static> {
@@ -104,50 +105,55 @@ pub struct WireRenderer {
 
 impl WireRenderer {
     pub fn new(gfx: GraphicsContext, viewport: &Viewport) -> Self {
-        let bind_group_layout =
-            gfx.device
-                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                    label: Some("WireRenderer.bind_group_layout"),
-                    entries: &[wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStage::VERTEX,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    }],
-                });
+        let bind_group_layout = gfx.device.create_bind_group_layout(
+            &wgpu::BindGroupLayoutDescriptor {
+                label: Some("WireRenderer.bind_group_layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStage::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+            },
+        );
 
-        let pipeline_layout = gfx
-            .device
-            .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        let pipeline_layout = gfx.device.create_pipeline_layout(
+            &wgpu::PipelineLayoutDescriptor {
                 label: Some("WireRenderer.pipeline_layout"),
-                bind_group_layouts: &[viewport.bind_group_layout(), &bind_group_layout],
+                bind_group_layouts: &[
+                    viewport.bind_group_layout(),
+                    &bind_group_layout,
+                ],
                 push_constant_ranges: &[],
-            });
-        let vertex_module = gfx
-            .device
-            .create_shader_module(&wgpu::include_spirv!(concat!(
-                env!("OUT_DIR"),
-                "/shaders/wire.vert.spv"
-            )));
-        let fragment_module = gfx
-            .device
-            .create_shader_module(&wgpu::include_spirv!(concat!(
-                env!("OUT_DIR"),
-                "/shaders/wire.frag.spv"
-            )));
-        let render_pipeline = gfx
-            .device
-            .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            },
+        );
+        let vertex_module =
+            gfx.device
+                .create_shader_module(&wgpu::include_spirv!(concat!(
+                    env!("OUT_DIR"),
+                    "/shaders/wire.vert.spv"
+                )));
+        let fragment_module =
+            gfx.device
+                .create_shader_module(&wgpu::include_spirv!(concat!(
+                    env!("OUT_DIR"),
+                    "/shaders/wire.frag.spv"
+                )));
+        let render_pipeline = gfx.device.create_render_pipeline(
+            &wgpu::RenderPipelineDescriptor {
                 label: Some("WireRenderer.render_pipeline"),
                 layout: Some(&pipeline_layout),
                 vertex: wgpu::VertexState {
                     module: &vertex_module,
                     entry_point: "main",
-                    buffers: &[Vertex::buffer_layout(), Instance::buffer_layout()],
+                    buffers: &[
+                        Vertex::buffer_layout(),
+                        Instance::buffer_layout(),
+                    ],
                 },
                 primitive: wgpu::PrimitiveState {
                     topology: wgpu::PrimitiveTopology::TriangleList,
@@ -180,44 +186,48 @@ impl WireRenderer {
                         write_mask: wgpu::ColorWrite::ALL,
                     }],
                 }),
-            });
-        let vertex_buffer = gfx
-            .device
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("WireRenderer.vertex_buffer"),
-                contents: bytemuck::cast_slice(VERTICES),
-                usage: wgpu::BufferUsage::VERTEX,
-            });
-        let index_buffer = gfx
-            .device
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("WireRenderer.index_buffer"),
-                contents: bytemuck::cast_slice(INDICES),
-                usage: wgpu::BufferUsage::INDEX,
-            });
-        let instance_buffer = gfx.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("WireRenderer.instance_buffer"),
-            size: INSTANCE_BUFFER_SIZE,
-            usage: wgpu::BufferUsage::VERTEX | wgpu::BufferUsage::COPY_DST,
-            mapped_at_creation: false,
-        });
-
-        let wire_color_buffer = gfx
-            .device
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("WireRenderer.wire_color_buffer"),
-                contents: bytemuck::bytes_of(&WireColor::default()),
-                usage: wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
+            },
+        );
+        let vertex_buffer =
+            gfx.device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("WireRenderer.vertex_buffer"),
+                    contents: bytemuck::cast_slice(VERTICES),
+                    usage: wgpu::BufferUsage::VERTEX,
+                });
+        let index_buffer =
+            gfx.device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("WireRenderer.index_buffer"),
+                    contents: bytemuck::cast_slice(INDICES),
+                    usage: wgpu::BufferUsage::INDEX,
+                });
+        let instance_buffer =
+            gfx.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("WireRenderer.instance_buffer"),
+                size: INSTANCE_BUFFER_SIZE,
+                usage: wgpu::BufferUsage::VERTEX | wgpu::BufferUsage::COPY_DST,
+                mapped_at_creation: false,
             });
 
-        let bind_group = gfx.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("WireRenderer.bind_group"),
-            layout: &bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: wire_color_buffer.as_entire_binding(),
-            }],
-        });
+        let wire_color_buffer =
+            gfx.device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("WireRenderer.wire_color_buffer"),
+                    contents: bytemuck::bytes_of(&WireColor::default()),
+                    usage: wgpu::BufferUsage::UNIFORM
+                        | wgpu::BufferUsage::COPY_DST,
+                });
+
+        let bind_group =
+            gfx.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("WireRenderer.bind_group"),
+                layout: &bind_group_layout,
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wire_color_buffer.as_entire_binding(),
+                }],
+            });
 
         Self {
             gfx,
@@ -278,12 +288,18 @@ impl WireRenderer {
     }
 
     pub fn update_wire_color(&mut self, wire_color: &WireColor) {
-        self.gfx
-            .queue
-            .write_buffer(&self.wire_color_buffer, 0, bytemuck::bytes_of(wire_color));
+        self.gfx.queue.write_buffer(
+            &self.wire_color_buffer,
+            0,
+            bytemuck::bytes_of(wire_color),
+        );
     }
 
-    pub fn draw<'a>(&'a mut self, viewport: &'a Viewport, render_pass: &mut wgpu::RenderPass<'a>) {
+    pub fn draw<'a>(
+        &'a mut self,
+        viewport: &'a Viewport,
+        render_pass: &mut wgpu::RenderPass<'a>,
+    ) {
         if self.buffer_update {
             self.buffer_update = false;
             let src_bytes: &[u8] = bytemuck::cast_slice(&self.instances);
@@ -295,7 +311,10 @@ impl WireRenderer {
         render_pass.set_pipeline(&self.render_pipeline);
         render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
         render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
-        render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+        render_pass.set_index_buffer(
+            self.index_buffer.slice(..),
+            wgpu::IndexFormat::Uint16,
+        );
         render_pass.set_bind_group(0, viewport.bind_group(), &[]);
         render_pass.set_bind_group(1, &self.bind_group, &[]);
         render_pass.draw_indexed(

@@ -19,7 +19,8 @@ use std::time::Instant;
 use wgpu_glyph::ab_glyph::FontArc;
 use wgpu_glyph::{GlyphBrushBuilder, Section, Text};
 use winit::event::{
-    ElementState, Event, MouseButton, MouseScrollDelta, VirtualKeyCode, WindowEvent,
+    ElementState, Event, MouseButton, MouseScrollDelta, VirtualKeyCode,
+    WindowEvent,
 };
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::{CursorIcon, Window, WindowBuilder};
@@ -60,7 +61,8 @@ impl GraphicsContextInner {
             .context("Failed to open device")?;
 
         // XXX does this produce incompatible formats on different backends?
-        let render_format = adapter.get_swap_chain_preferred_format(&surface).unwrap();
+        let render_format =
+            adapter.get_swap_chain_preferred_format(&surface).unwrap();
         let depth_format = wgpu::TextureFormat::Depth32Float;
 
         Ok(Self {
@@ -118,7 +120,8 @@ fn create_depth_texture(gfx: &GraphicsContext) -> wgpu::Texture {
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
         format: gfx.depth_format,
-        usage: wgpu::TextureUsage::RENDER_ATTACHMENT | wgpu::TextureUsage::SAMPLED,
+        usage: wgpu::TextureUsage::RENDER_ATTACHMENT
+            | wgpu::TextureUsage::SAMPLED,
     })
 }
 
@@ -129,9 +132,11 @@ impl State {
         let depth_texture = create_depth_texture(&gfx);
         let depth_texture_view = depth_texture.create_view(&Default::default());
 
-        let fira_sans = FontArc::try_from_slice(include_bytes!("fonts/FiraSans-Regular.ttf"))?;
-        let glyph_brush =
-            GlyphBrushBuilder::using_font(fira_sans).build(&gfx.device, gfx.render_format);
+        let fira_sans = FontArc::try_from_slice(include_bytes!(
+            "fonts/FiraSans-Regular.ttf"
+        ))?;
+        let glyph_brush = GlyphBrushBuilder::using_font(fira_sans)
+            .build(&gfx.device, gfx.render_format);
         let staging_belt = wgpu::util::StagingBelt::new(1024);
         let local_pool = futures_executor::LocalPool::new();
         let local_spawner = local_pool.spawner();
@@ -258,56 +263,68 @@ impl State {
                 let position = Vec2::new(position.x as f32, position.y as f32);
                 self.viewport.cursor_moved(position);
             }
-            WindowEvent::MouseInput { button, state, .. } => match (button, state) {
-                (MouseButton::Middle, ElementState::Pressed) => {
-                    self.cursor_manager.start_pan(&self.viewport);
-                    self.gfx.window.set_cursor_icon(CursorIcon::Grabbing);
-                }
-                (MouseButton::Middle, ElementState::Released) => {
-                    match self.cursor_manager.current_mode() {
-                        CursorMode::Pan { .. } => {
-                            self.cursor_manager.end();
-                            self.gfx.window.set_cursor_icon(CursorIcon::Default);
-                        }
-                        _ => {}
+            WindowEvent::MouseInput { button, state, .. } => {
+                match (button, state) {
+                    (MouseButton::Middle, ElementState::Pressed) => {
+                        self.cursor_manager.start_pan(&self.viewport);
+                        self.gfx.window.set_cursor_icon(CursorIcon::Grabbing);
                     }
-                }
-                (MouseButton::Left, ElementState::Pressed) => {
-                    self.cursor_manager.start_place(&self.viewport);
-                }
-                (MouseButton::Left, ElementState::Released) => {
-                    match self.cursor_manager.current_mode() {
-                        &CursorMode::Place {
-                            start_position,
-                            end_position,
-                            ..
-                        } => {
-                            if start_position == end_position {
-                                self.circuit.place_pin(start_position);
-                            } else {
-                                self.circuit.place_wire(start_position, end_position);
+                    (MouseButton::Middle, ElementState::Released) => {
+                        match self.cursor_manager.current_mode() {
+                            CursorMode::Pan { .. } => {
+                                self.cursor_manager.end();
+                                self.gfx
+                                    .window
+                                    .set_cursor_icon(CursorIcon::Default);
                             }
-                            self.cursor_manager.end();
+                            _ => {}
                         }
-                        _ => {}
                     }
-                }
-                (MouseButton::Right, ElementState::Pressed) => {
-                    match &self.cursor_manager.current_mode() {
-                        &CursorMode::Normal => {
-                            let position = self.viewport.cursor().tile();
-                            self.circuit.delete_all_at(position);
+                    (MouseButton::Left, ElementState::Pressed) => {
+                        self.cursor_manager.start_place(&self.viewport);
+                    }
+                    (MouseButton::Left, ElementState::Released) => {
+                        match self.cursor_manager.current_mode() {
+                            &CursorMode::Place {
+                                start_position,
+                                end_position,
+                                ..
+                            } => {
+                                if start_position == end_position {
+                                    self.circuit.place_pin(start_position);
+                                } else {
+                                    self.circuit.place_wire(
+                                        start_position,
+                                        end_position,
+                                    );
+                                }
+                                self.cursor_manager.end();
+                            }
+                            _ => {}
                         }
-                        _ => {}
                     }
+                    (MouseButton::Right, ElementState::Pressed) => {
+                        match &self.cursor_manager.current_mode() {
+                            &CursorMode::Normal => {
+                                let position = self.viewport.cursor().tile();
+                                self.circuit.delete_all_at(position);
+                            }
+                            _ => {}
+                        }
+                    }
+                    _ => {}
                 }
-                _ => {}
-            },
-            WindowEvent::MouseWheel { delta, .. } => match &self.cursor_manager.current_mode() {
+            }
+            WindowEvent::MouseWheel { delta, .. } => match &self
+                .cursor_manager
+                .current_mode()
+            {
                 CursorMode::Normal => {
                     let delta = match delta {
                         MouseScrollDelta::LineDelta(_x, y) => y,
-                        MouseScrollDelta::PixelDelta(position) => position.y as f32 / 16.0,
+                        MouseScrollDelta::PixelDelta(position) => {
+                            position.y as f32 / 16.0
+                        }
                     };
                     let camera = self.viewport.camera_mut();
                     camera.set_zoom(camera.zoom * camera.zoom_step.powf(delta));
@@ -363,11 +380,13 @@ impl State {
         let frame = loop {
             match self.swap_chain.get_current_frame() {
                 Ok(frame) => break frame.output,
-                Err(wgpu::SwapChainError::Lost) | Err(wgpu::SwapChainError::Outdated) => {
+                Err(wgpu::SwapChainError::Lost)
+                | Err(wgpu::SwapChainError::Outdated) => {
                     self.swap_chain = create_swap_chain(&self.gfx);
 
                     self.depth_texture = create_depth_texture(&self.gfx);
-                    self.depth_texture_view = self.depth_texture.create_view(&Default::default());
+                    self.depth_texture_view =
+                        self.depth_texture.create_view(&Default::default());
                 }
                 Err(wgpu::SwapChainError::Timeout) => {
                     return Ok(());
@@ -378,33 +397,37 @@ impl State {
             }
         };
 
-        let mut encoder = self.gfx.device.create_command_encoder(&Default::default());
+        let mut encoder =
+            self.gfx.device.create_command_encoder(&Default::default());
 
         {
-            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: None,
-                color_attachments: &[wgpu::RenderPassColorAttachment {
-                    view: &frame.view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.1,
-                            g: 0.2,
-                            b: 0.3,
-                            a: 1.0,
-                        }),
-                        store: true,
-                    },
-                }],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.depth_texture_view,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(0.0),
-                        store: true,
-                    }),
-                    stencil_ops: None,
-                }),
-            });
+            let mut render_pass =
+                encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: None,
+                    color_attachments: &[wgpu::RenderPassColorAttachment {
+                        view: &frame.view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color {
+                                r: 0.1,
+                                g: 0.2,
+                                b: 0.3,
+                                a: 1.0,
+                            }),
+                            store: true,
+                        },
+                    }],
+                    depth_stencil_attachment: Some(
+                        wgpu::RenderPassDepthStencilAttachment {
+                            view: &self.depth_texture_view,
+                            depth_ops: Some(wgpu::Operations {
+                                load: wgpu::LoadOp::Clear(0.0),
+                                store: true,
+                            }),
+                            stencil_ops: None,
+                        },
+                    ),
+                });
             self.board_renderer.draw(&self.viewport, &mut render_pass);
             self.circuit.draw(&self.viewport, &mut render_pass);
             self.wire_renderer.draw(&self.viewport, &mut render_pass);

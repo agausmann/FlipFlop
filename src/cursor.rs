@@ -77,7 +77,11 @@ impl CursorManager {
         }
     }
 
-    pub fn draw<'a>(&'a mut self, viewport: &'a Viewport, render_pass: &mut wgpu::RenderPass<'a>) {
+    pub fn draw<'a>(
+        &'a mut self,
+        viewport: &'a Viewport,
+        render_pass: &mut wgpu::RenderPass<'a>,
+    ) {
         self.wire_renderer.draw(viewport, render_pass);
     }
 

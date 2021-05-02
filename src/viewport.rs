@@ -93,8 +93,10 @@ impl Cursor {
             gfx.window.inner_size().width as f32,
             gfx.window.inner_size().height as f32,
         );
-        self.world_position =
-            (self.screen_position - size / 2.0) * Vec2::new(1.0, -1.0) / camera.zoom + camera.pan;
+        self.world_position = (self.screen_position - size / 2.0)
+            * Vec2::new(1.0, -1.0)
+            / camera.zoom
+            + camera.pan;
     }
 
     pub fn tile(&self) -> IVec2 {
@@ -113,36 +115,38 @@ pub struct Viewport {
 
 impl Viewport {
     pub fn new(gfx: GraphicsContext) -> Self {
-        let uniform_buffer = gfx
-            .device
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("Viewport.uniform_buffer"),
-                contents: bytemuck::bytes_of(&Uniforms::default()),
-                usage: wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
-            });
-        let bind_group_layout =
+        let uniform_buffer =
             gfx.device
-                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                    label: Some("Viewport.bind_group_layout"),
-                    entries: &[wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStage::VERTEX,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    }],
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("Viewport.uniform_buffer"),
+                    contents: bytemuck::bytes_of(&Uniforms::default()),
+                    usage: wgpu::BufferUsage::UNIFORM
+                        | wgpu::BufferUsage::COPY_DST,
                 });
-        let bind_group = gfx.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Viewport.bind_group"),
-            layout: &bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: uniform_buffer.as_entire_binding(),
-            }],
-        });
+        let bind_group_layout = gfx.device.create_bind_group_layout(
+            &wgpu::BindGroupLayoutDescriptor {
+                label: Some("Viewport.bind_group_layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStage::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+            },
+        );
+        let bind_group =
+            gfx.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("Viewport.bind_group"),
+                layout: &bind_group_layout,
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: uniform_buffer.as_entire_binding(),
+                }],
+            });
 
         Self {
             gfx,

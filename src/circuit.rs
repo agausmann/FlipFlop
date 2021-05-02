@@ -23,7 +23,11 @@ impl Circuit {
         }
     }
 
-    pub fn draw<'a>(&'a mut self, viewport: &'a Viewport, render_pass: &mut wgpu::RenderPass<'a>) {
+    pub fn draw<'a>(
+        &'a mut self,
+        viewport: &'a Viewport,
+        render_pass: &mut wgpu::RenderPass<'a>,
+    ) {
         self.renderer.draw(viewport, render_pass);
     }
 
@@ -45,7 +49,9 @@ impl Circuit {
 
         // Split the wire at every tile where a pin is present.
         let pin_points: Vec<IVec2> = tiles(start, end)
-            .filter(|pos| self.tiles.get(&pos).and_then(|tile| tile.pin).is_some())
+            .filter(|pos| {
+                self.tiles.get(&pos).and_then(|tile| tile.pin).is_some()
+            })
             .collect();
 
         for v in pin_points.windows(2) {
