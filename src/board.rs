@@ -5,6 +5,7 @@ use glam::IVec2;
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::convert::TryInto;
+use std::num::NonZeroU32;
 use std::sync::atomic::{AtomicU64, Ordering};
 use wgpu::util::DeviceExt;
 
@@ -14,8 +15,11 @@ struct Vertex {
     position: [f32; 2],
 }
 
-static VERTEX_ATTRIBUTES: Lazy<[wgpu::VertexAttribute; 1]> =
-    Lazy::new(|| wgpu::vertex_attr_array![0 => Float2]);
+static VERTEX_ATTRIBUTES: Lazy<[wgpu::VertexAttribute; 1]> = Lazy::new(|| {
+    wgpu::vertex_attr_array![
+        0 => Float32x2,
+    ]
+});
 
 impl Vertex {
     fn buffer_layout() -> wgpu::VertexBufferLayout<'static> {
@@ -38,8 +42,14 @@ struct Instance {
 
 const MAX_Z_INDEX: u32 = 255;
 
-static INSTANCE_ATTRIBUTES: Lazy<[wgpu::VertexAttribute; 4]> =
-    Lazy::new(|| wgpu::vertex_attr_array![1 => Float2, 2 => Float2, 3 => Float4, 4 => Float]);
+static INSTANCE_ATTRIBUTES: Lazy<[wgpu::VertexAttribute; 4]> = Lazy::new(|| {
+    wgpu::vertex_attr_array![
+        1 => Float32x2,
+        2 => Float32x2,
+        3 => Float32x4,
+        4 => Float32,
+    ]
+});
 
 impl Instance {
     fn buffer_layout() -> wgpu::VertexBufferLayout<'static> {
@@ -155,8 +165,10 @@ impl BoardRenderer {
                     topology: wgpu::PrimitiveTopology::TriangleList,
                     strip_index_format: None,
                     front_face: wgpu::FrontFace::Cw,
-                    cull_mode: wgpu::CullMode::Back,
+                    cull_mode: None,
+                    clamp_depth: false,
                     polygon_mode: wgpu::PolygonMode::Fill,
+                    conservative: false,
                 },
                 depth_stencil: Some(wgpu::DepthStencilState {
                     format: gfx.depth_format,
@@ -164,7 +176,6 @@ impl BoardRenderer {
                     depth_compare: wgpu::CompareFunction::GreaterEqual,
                     stencil: Default::default(),
                     bias: Default::default(),
-                    clamp_depth: false,
                 }),
                 multisample: Default::default(),
                 fragment: Some(wgpu::FragmentState {
@@ -172,8 +183,10 @@ impl BoardRenderer {
                     entry_point: "main",
                     targets: &[wgpu::ColorTargetState {
                         format: gfx.render_format,
-                        alpha_blend: wgpu::BlendState::REPLACE,
-                        color_blend: wgpu::BlendState::REPLACE,
+                        blend: Some(wgpu::BlendState {
+                            color: wgpu::BlendComponent::REPLACE,
+                            alpha: wgpu::BlendComponent::REPLACE,
+                        }),
                         write_mask: wgpu::ColorWrite::ALL,
                     }],
                 }),
@@ -217,16 +230,16 @@ impl BoardRenderer {
             usage: wgpu::TextureUsage::SAMPLED | wgpu::TextureUsage::COPY_DST,
         });
         gfx.queue.write_texture(
-            wgpu::TextureCopyView {
+            wgpu::ImageCopyTexture {
                 texture: &texture,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
             },
             &board_image,
-            wgpu::TextureDataLayout {
+            wgpu::ImageDataLayout {
                 offset: 0,
-                bytes_per_row: 4 * size.width,
-                rows_per_image: size.height,
+                bytes_per_row: NonZeroU32::new(4 * size.width),
+                rows_per_image: NonZeroU32::new(size.height),
             },
             size,
         );

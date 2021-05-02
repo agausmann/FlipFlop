@@ -14,8 +14,11 @@ struct Vertex {
     position: [f32; 2],
 }
 
-static VERTEX_ATTRIBUTES: Lazy<[wgpu::VertexAttribute; 1]> =
-    Lazy::new(|| wgpu::vertex_attr_array![0 => Float2]);
+static VERTEX_ATTRIBUTES: Lazy<[wgpu::VertexAttribute; 1]> = Lazy::new(|| {
+    wgpu::vertex_attr_array![
+        0 => Float32x2,
+    ]
+});
 
 impl Vertex {
     fn buffer_layout() -> wgpu::VertexBufferLayout<'static> {
@@ -35,8 +38,13 @@ struct Instance {
     is_powered: u32,
 }
 
-static INSTANCE_ATTRIBUTES: Lazy<[wgpu::VertexAttribute; 3]> =
-    Lazy::new(|| wgpu::vertex_attr_array![1 => Float2, 2 => Float2, 3 => Uint]);
+static INSTANCE_ATTRIBUTES: Lazy<[wgpu::VertexAttribute; 3]> = Lazy::new(|| {
+    wgpu::vertex_attr_array![
+        1 => Float32x2,
+        2 => Float32x2,
+        3 => Uint32,
+    ]
+});
 
 impl Instance {
     fn buffer_layout() -> wgpu::VertexBufferLayout<'static> {
@@ -145,8 +153,10 @@ impl WireRenderer {
                     topology: wgpu::PrimitiveTopology::TriangleList,
                     strip_index_format: None,
                     front_face: wgpu::FrontFace::Cw,
-                    cull_mode: wgpu::CullMode::Back,
+                    cull_mode: None,
+                    clamp_depth: false,
                     polygon_mode: wgpu::PolygonMode::Fill,
+                    conservative: false,
                 },
                 depth_stencil: Some(wgpu::DepthStencilState {
                     format: gfx.depth_format,
@@ -156,7 +166,6 @@ impl WireRenderer {
                     depth_compare: wgpu::CompareFunction::Always,
                     stencil: Default::default(),
                     bias: Default::default(),
-                    clamp_depth: false,
                 }),
                 multisample: Default::default(),
                 fragment: Some(wgpu::FragmentState {
@@ -164,8 +173,10 @@ impl WireRenderer {
                     entry_point: "main",
                     targets: &[wgpu::ColorTargetState {
                         format: gfx.render_format,
-                        alpha_blend: wgpu::BlendState::REPLACE,
-                        color_blend: wgpu::BlendState::REPLACE,
+                        blend: Some(wgpu::BlendState {
+                            color: wgpu::BlendComponent::REPLACE,
+                            alpha: wgpu::BlendComponent::REPLACE,
+                        }),
                         write_mask: wgpu::ColorWrite::ALL,
                     }],
                 }),

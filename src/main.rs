@@ -69,7 +69,7 @@ impl GraphicsContextInner {
             .context("Failed to open device")?;
 
         // XXX does this produce incompatible formats on different backends?
-        let render_format = adapter.get_swap_chain_preferred_format(&surface);
+        let render_format = adapter.get_swap_chain_preferred_format(&surface).unwrap();
         let depth_format = wgpu::TextureFormat::Depth32Float;
 
         Ok(Self {
@@ -120,7 +120,7 @@ fn create_depth_texture(gfx: &GraphicsContext) -> wgpu::Texture {
         size: wgpu::Extent3d {
             width: gfx.window.inner_size().width,
             height: gfx.window.inner_size().height,
-            depth: 1,
+            ..Default::default()
         },
         mip_level_count: 1,
         sample_count: 1,
@@ -461,8 +461,8 @@ impl State {
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: None,
-                color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
-                    attachment: &frame.view,
+                color_attachments: &[wgpu::RenderPassColorAttachment {
+                    view: &frame.view,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color {
@@ -474,8 +474,8 @@ impl State {
                         store: true,
                     },
                 }],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachmentDescriptor {
-                    attachment: &self.depth_texture_view,
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.depth_texture_view,
                     depth_ops: Some(wgpu::Operations {
                         load: wgpu::LoadOp::Clear(0.0),
                         store: true,
