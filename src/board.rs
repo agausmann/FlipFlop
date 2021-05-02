@@ -105,7 +105,7 @@ pub struct BoardRenderer {
 }
 
 impl BoardRenderer {
-    pub fn new(gfx: GraphicsContext, viewport: &Viewport) -> Self {
+    pub fn new(gfx: &GraphicsContext, viewport: &Viewport) -> Self {
         let bind_group_layout = gfx.device.create_bind_group_layout(
             &wgpu::BindGroupLayoutDescriptor {
                 label: Some("BoardRenderer.bind_group_layout"),
@@ -283,7 +283,7 @@ impl BoardRenderer {
             });
 
         Self {
-            gfx,
+            gfx: gfx.clone(),
             render_pipeline,
             vertex_buffer,
             index_buffer,

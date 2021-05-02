@@ -114,7 +114,7 @@ pub struct Viewport {
 }
 
 impl Viewport {
-    pub fn new(gfx: GraphicsContext) -> Self {
+    pub fn new(gfx: &GraphicsContext) -> Self {
         let uniform_buffer =
             gfx.device
                 .create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -149,7 +149,7 @@ impl Viewport {
             });
 
         Self {
-            gfx,
+            gfx: gfx.clone(),
             uniform_buffer,
             bind_group_layout,
             bind_group,

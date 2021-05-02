@@ -1,3 +1,4 @@
+use crate::board::{self, BoardRenderer};
 use crate::viewport::Viewport;
 use crate::wire::{self, WireRenderer};
 use crate::GraphicsContext;
@@ -5,7 +6,8 @@ use glam::IVec2;
 use std::collections::HashMap;
 
 pub struct Circuit {
-    renderer: WireRenderer,
+    board_renderer: BoardRenderer,
+    wire_renderer: WireRenderer,
     last_id: u64,
     tiles: HashMap<IVec2, Tile>,
     pins: HashMap<u64, Pin>,
@@ -13,9 +15,17 @@ pub struct Circuit {
 }
 
 impl Circuit {
-    pub fn new(gfx: GraphicsContext, viewport: &Viewport) -> Self {
+    pub fn new(gfx: &GraphicsContext, viewport: &Viewport) -> Self {
+        let mut board_renderer = BoardRenderer::new(gfx, &viewport);
+        board_renderer.insert(&board::Board {
+            position: IVec2::new(-10_000, -10_000),
+            size: IVec2::new(20_000, 20_000),
+            color: [0.1, 0.1, 0.1, 1.0],
+            z_index: 0,
+        });
         Self {
-            renderer: WireRenderer::new(gfx, viewport),
+            board_renderer,
+            wire_renderer: WireRenderer::new(gfx, viewport),
             last_id: 0,
             tiles: HashMap::new(),
             pins: HashMap::new(),
@@ -28,7 +38,8 @@ impl Circuit {
         viewport: &'a Viewport,
         render_pass: &mut wgpu::RenderPass<'a>,
     ) {
-        self.renderer.draw(viewport, render_pass);
+        self.board_renderer.draw(viewport, render_pass);
+        self.wire_renderer.draw(viewport, render_pass);
     }
 
     pub fn tile(&self, pos: IVec2) -> Option<&Tile> {
@@ -95,7 +106,7 @@ impl Circuit {
             }
         }
         let power_sources = 0; //TODO detect
-        let instance = self.renderer.insert(
+        let instance = self.wire_renderer.insert(
             &wire::Pin {
                 position,
                 is_powered: power_sources > 0,
@@ -134,7 +145,7 @@ impl Circuit {
         }
 
         let power_sources = 0; //TODO detect
-        let instance = self.renderer.insert(
+        let instance = self.wire_renderer.insert(
             &wire::Wire {
                 start,
                 end,
@@ -169,7 +180,7 @@ impl Circuit {
         let pin = self.pins.remove(&pin_id).unwrap();
         let tile = self.tiles.get_mut(&pin.position).unwrap();
         tile.pin = None;
-        self.renderer.remove(&pin.instance);
+        self.wire_renderer.remove(&pin.instance);
         pin
     }
 
@@ -187,7 +198,7 @@ impl Circuit {
             }
             assert!(removed);
         }
-        self.renderer.remove(&wire.instance);
+        self.wire_renderer.remove(&wire.instance);
         wire
     }
 

@@ -9,7 +9,7 @@ pub struct CursorManager {
 }
 
 impl CursorManager {
-    pub fn new(gfx: GraphicsContext, viewport: &Viewport) -> Self {
+    pub fn new(gfx: &GraphicsContext, viewport: &Viewport) -> Self {
         Self {
             wire_renderer: WireRenderer::new(gfx, viewport),
             current_mode: CursorMode::Normal,

@@ -5,15 +5,13 @@ pub mod cursor;
 pub mod viewport;
 pub mod wire;
 
-use crate::board::{Board, BoardRenderer};
 use crate::circuit::Circuit;
 use crate::counter::Counter;
 use crate::cursor::{CursorManager, CursorMode};
 use crate::viewport::Viewport;
-use crate::wire::{Pin, Wire, WireRenderer};
 use anyhow::Context;
 use futures_executor::block_on;
-use glam::{IVec2, Vec2};
+use glam::Vec2;
 use std::sync::Arc;
 use std::time::Instant;
 use wgpu_glyph::ab_glyph::FontArc;
@@ -86,8 +84,6 @@ struct State {
     local_pool: futures_executor::LocalPool,
     local_spawner: futures_executor::LocalSpawner,
     viewport: Viewport,
-    board_renderer: BoardRenderer,
-    wire_renderer: WireRenderer,
     frame_counter: Counter,
     should_close: bool,
     last_update: Instant,
@@ -141,98 +137,10 @@ impl State {
         let local_pool = futures_executor::LocalPool::new();
         let local_spawner = local_pool.spawner();
 
-        let viewport = Viewport::new(gfx.clone());
+        let viewport = Viewport::new(&gfx);
 
-        let mut board_renderer = BoardRenderer::new(gfx.clone(), &viewport);
-        board_renderer.insert(&Board {
-            position: IVec2::new(0, 0),
-            size: IVec2::new(2, 2),
-            color: [0.2, 0.3, 0.1, 1.0],
-            z_index: 1,
-        });
-        board_renderer.insert(&Board {
-            position: IVec2::new(-4, -2),
-            size: IVec2::new(2, 1),
-            color: [0.3, 0.1, 0.2, 1.0],
-            z_index: 1,
-        });
-        board_renderer.insert(&Board {
-            position: IVec2::new(0, -4),
-            size: IVec2::new(2, 2),
-            color: [0.3, 0.2, 0.1, 1.0],
-            z_index: 1,
-        });
-        board_renderer.insert(&Board {
-            position: IVec2::new(-10_000, -10_000),
-            size: IVec2::new(20_000, 20_000),
-            color: [0.1, 0.1, 0.1, 1.0],
-            z_index: 0,
-        });
-
-        let mut wire_renderer = WireRenderer::new(gfx.clone(), &viewport);
-
-        wire_renderer.insert(
-            &Pin {
-                position: IVec2::new(0, 0),
-                is_powered: true,
-            }
-            .into(),
-        );
-        wire_renderer.insert(
-            &Wire {
-                start: IVec2::new(0, 0),
-                end: IVec2::new(1, 0),
-                is_powered: true,
-            }
-            .into(),
-        );
-        wire_renderer.insert(
-            &Pin {
-                position: IVec2::new(1, 0),
-                is_powered: true,
-            }
-            .into(),
-        );
-        wire_renderer.insert(
-            &Wire {
-                start: IVec2::new(0, 0),
-                end: IVec2::new(0, -2),
-                is_powered: true,
-            }
-            .into(),
-        );
-        wire_renderer.insert(
-            &Pin {
-                position: IVec2::new(0, -2),
-                is_powered: true,
-            }
-            .into(),
-        );
-
-        wire_renderer.insert(
-            &Pin {
-                position: IVec2::new(0, 2),
-                is_powered: false,
-            }
-            .into(),
-        );
-        wire_renderer.insert(
-            &Wire {
-                start: IVec2::new(0, 2),
-                end: IVec2::new(-2, 2),
-                is_powered: false,
-            }
-            .into(),
-        );
-        wire_renderer.insert(
-            &Pin {
-                position: IVec2::new(-2, 2),
-                is_powered: false,
-            }
-            .into(),
-        );
-        let circuit = Circuit::new(gfx.clone(), &viewport);
-        let cursor_manager = CursorManager::new(gfx.clone(), &viewport);
+        let circuit = Circuit::new(&gfx, &viewport);
+        let cursor_manager = CursorManager::new(&gfx, &viewport);
 
         Ok(Self {
             gfx,
@@ -244,8 +152,6 @@ impl State {
             local_pool,
             local_spawner,
             viewport,
-            board_renderer,
-            wire_renderer,
             frame_counter: Counter::new(),
             should_close: false,
             last_update: Instant::now(),
@@ -428,9 +334,7 @@ impl State {
                         },
                     ),
                 });
-            self.board_renderer.draw(&self.viewport, &mut render_pass);
             self.circuit.draw(&self.viewport, &mut render_pass);
-            self.wire_renderer.draw(&self.viewport, &mut render_pass);
             self.cursor_manager.draw(&self.viewport, &mut render_pass);
         }
 

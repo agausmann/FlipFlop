@@ -104,7 +104,7 @@ pub struct WireRenderer {
 }
 
 impl WireRenderer {
-    pub fn new(gfx: GraphicsContext, viewport: &Viewport) -> Self {
+    pub fn new(gfx: &GraphicsContext, viewport: &Viewport) -> Self {
         let bind_group_layout = gfx.device.create_bind_group_layout(
             &wgpu::BindGroupLayoutDescriptor {
                 label: Some("WireRenderer.bind_group_layout"),
@@ -230,7 +230,7 @@ impl WireRenderer {
             });
 
         Self {
-            gfx,
+            gfx: gfx.clone(),
             render_pipeline,
             vertex_buffer,
             index_buffer,
