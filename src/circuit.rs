@@ -63,7 +63,7 @@ impl Circuit {
 
         let wires = tile.wires.clone();
         for &wire_id in wires.iter().flatten() {
-            let wire = self.remove_wire_by_id(wire_id);
+            let wire = self.remove_wire(wire_id);
             self.insert_wire(wire.start, position);
             self.insert_wire(position, wire.end);
         }
@@ -74,10 +74,10 @@ impl Circuit {
     pub fn delete_all_at(&mut self, position: IVec2) {
         if let Some(&tile) = self.tiles.get(&position) {
             if let Some(pin_id) = tile.pin {
-                self.remove_pin_by_id(pin_id);
+                self.remove_pin(pin_id);
             }
             for &wire_id in tile.wires.iter().flatten() {
-                self.remove_wire_by_id(wire_id);
+                self.remove_wire(wire_id);
             }
         }
     }
@@ -159,7 +159,7 @@ impl Circuit {
         true
     }
 
-    fn remove_pin_by_id(&mut self, pin_id: u64) -> Pin {
+    fn remove_pin(&mut self, pin_id: u64) -> Pin {
         let pin = self.pins.remove(&pin_id).unwrap();
         let tile = self.tiles.get_mut(&pin.position).unwrap();
         tile.pin = None;
@@ -167,13 +167,7 @@ impl Circuit {
         pin
     }
 
-    fn remove_pin(&mut self, pos: IVec2) -> Option<Pin> {
-        let tile = self.tiles.get_mut(&pos)?;
-        let pin_id = tile.pin?;
-        Some(self.remove_pin_by_id(pin_id))
-    }
-
-    fn remove_wire_by_id(&mut self, wire_id: u64) -> Wire {
+    fn remove_wire(&mut self, wire_id: u64) -> Wire {
         let wire = self.wires.remove(&wire_id).unwrap();
         for tile_pos in wire.tiles() {
             let tile = self.tiles.get_mut(&tile_pos).unwrap();
@@ -189,20 +183,6 @@ impl Circuit {
         }
         self.renderer.remove(&wire.instance);
         wire
-    }
-
-    fn remove_wire(&mut self, start: IVec2, end: IVec2) -> Option<Wire> {
-        let tile = self.tiles.get(&start)?;
-        let mut wire_id = None;
-        for &id in tile.wires.iter().flatten() {
-            let wire = &self.wires[&id];
-            if wire.start == start && wire.end == end {
-                wire_id = Some(id);
-                break;
-            }
-        }
-        let wire_id = wire_id?;
-        Some(self.remove_wire_by_id(wire_id))
     }
 
     fn make_id(&mut self) -> u64 {
