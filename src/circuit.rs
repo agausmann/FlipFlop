@@ -155,6 +155,12 @@ impl Circuit {
     }
 
     fn insert_wire(&mut self, start: IVec2, end: IVec2) -> bool {
+        // Lexicographically order the start/end points to ensure "backwards" duplicates
+        // get caught.
+        if <[i32; 2]>::from(start) > <[i32; 2]>::from(end) {
+            return self.insert_wire(end, start);
+        }
+
         // Either a wire's start and end X coordinates need to be the same,
         // or their Y coordinates need to be the same, but not both.
         // (If both, then the wire would be zero-length, which is not useful.)
@@ -221,7 +227,6 @@ impl Circuit {
                 if *slot == Some(wire_id) {
                     removed = true;
                     *slot = None;
-                    break;
                 }
             }
             assert!(removed);
