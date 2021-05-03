@@ -2,6 +2,7 @@ pub mod board;
 pub mod circuit;
 pub mod counter;
 pub mod cursor;
+pub mod instance;
 pub mod viewport;
 pub mod wire;
 

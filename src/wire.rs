@@ -1,12 +1,13 @@
+use crate::instance::InstanceManager;
 use crate::viewport::Viewport;
 use crate::GraphicsContext;
 use bytemuck::{Pod, Zeroable};
 use glam::{IVec2, Vec2};
 use once_cell::sync::Lazy;
-use std::collections::HashMap;
 use std::convert::TryInto;
-use std::sync::atomic::{AtomicU64, Ordering};
 use wgpu::util::DeviceExt;
+
+pub use crate::instance::Handle;
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -85,22 +86,14 @@ const VERTICES: &[Vertex] = &[
 
 const INDICES: &[u16] = &[0, 1, 2, 0, 2, 3];
 
-const INSTANCE_BUFFER_SIZE: wgpu::BufferAddress = 1 * 1024 * 1024; // 1MB
-
 pub struct WireRenderer {
     gfx: GraphicsContext,
     render_pipeline: wgpu::RenderPipeline,
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
-    instance_buffer: wgpu::Buffer,
-    bind_group: wgpu::BindGroup,
-
     wire_color_buffer: wgpu::Buffer,
-
-    instances: Vec<Instance>,
-    instance_to_handle: Vec<Handle>,
-    handle_to_instance: HashMap<Handle, usize>,
-    buffer_update: bool,
+    bind_group: wgpu::BindGroup,
+    instances: InstanceManager<Instance>,
 }
 
 impl WireRenderer {
@@ -202,13 +195,6 @@ impl WireRenderer {
                     contents: bytemuck::cast_slice(INDICES),
                     usage: wgpu::BufferUsage::INDEX,
                 });
-        let instance_buffer =
-            gfx.device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("WireRenderer.instance_buffer"),
-                size: INSTANCE_BUFFER_SIZE,
-                usage: wgpu::BufferUsage::VERTEX | wgpu::BufferUsage::COPY_DST,
-                mapped_at_creation: false,
-            });
 
         let wire_color_buffer =
             gfx.device
@@ -229,62 +215,29 @@ impl WireRenderer {
                 }],
             });
 
+        let instances = InstanceManager::new(gfx);
+
         Self {
             gfx: gfx.clone(),
             render_pipeline,
             vertex_buffer,
             index_buffer,
-            instance_buffer,
-            bind_group,
-
             wire_color_buffer,
-
-            instances: Vec::new(),
-            instance_to_handle: Vec::new(),
-            handle_to_instance: HashMap::new(),
-            buffer_update: false,
+            bind_group,
+            instances,
         }
     }
 
     pub fn insert(&mut self, wire: &WireRect) -> Handle {
-        let handle = Handle::new();
-        self.update(&handle, wire);
-        handle
+        self.instances.insert(Instance::new(wire))
     }
 
     pub fn update(&mut self, handle: &Handle, wire: &WireRect) {
-        self.buffer_update = true;
-        if let Some(&index) = self.handle_to_instance.get(handle) {
-            self.instances[index] = Instance::new(wire);
-        } else {
-            let index = self.instances.len();
-            self.instances.push(Instance::new(wire));
-            self.instance_to_handle.push(handle.clone());
-            self.handle_to_instance.insert(handle.clone(), index);
-        }
+        self.instances.update(handle, Instance::new(wire));
     }
 
     pub fn remove(&mut self, handle: &Handle) -> bool {
-        // If the handle exists for this renderer:
-        if let Some(index) = self.handle_to_instance.remove(handle) {
-            self.buffer_update = true;
-
-            self.instances.swap_remove(index);
-
-            let removed_handle = self.instance_to_handle.swap_remove(index);
-            debug_assert!(removed_handle == *handle);
-
-            if index != self.instances.len() {
-                // Update handle association for the instance that was swapped to this location.
-                let affected_handle = &self.instance_to_handle[index];
-                self.handle_to_instance
-                    .insert(affected_handle.clone(), index);
-            }
-
-            true
-        } else {
-            false
-        }
+        self.instances.remove(handle)
     }
 
     pub fn update_wire_color(&mut self, wire_color: &WireColor) {
@@ -300,17 +253,15 @@ impl WireRenderer {
         viewport: &'a Viewport,
         render_pass: &mut wgpu::RenderPass<'a>,
     ) {
-        if self.buffer_update {
-            self.buffer_update = false;
-            let src_bytes: &[u8] = bytemuck::cast_slice(&self.instances);
-            self.gfx
-                .queue
-                .write_buffer(&self.instance_buffer, 0, src_bytes);
-        }
+        let instance_count = self.instances.len();
+        let instance_buffer = match self.instances.buffer() {
+            Some(buffer) => buffer,
+            None => return,
+        };
 
         render_pass.set_pipeline(&self.render_pipeline);
         render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-        render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
+        render_pass.set_vertex_buffer(1, instance_buffer.slice(..));
         render_pass.set_index_buffer(
             self.index_buffer.slice(..),
             wgpu::IndexFormat::Uint16,
@@ -320,7 +271,7 @@ impl WireRenderer {
         render_pass.draw_indexed(
             0..INDICES.len().try_into().unwrap(),
             0,
-            0..self.instances.len().try_into().expect("too many instances"),
+            0..instance_count.try_into().expect("too many instances"),
         );
     }
 }
@@ -381,21 +332,5 @@ impl Default for WireColor {
             off_color: [0.0, 0.0, 0.0, 1.0],
             on_color: [0.8, 0.0, 0.0, 1.0],
         }
-    }
-}
-
-static NEXT_HANDLE: AtomicU64 = AtomicU64::new(0);
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Handle(u64);
-
-impl Handle {
-    fn new() -> Self {
-        let val = NEXT_HANDLE.fetch_add(1, Ordering::Relaxed);
-        // Prevent overflow:
-        if val == u64::MAX {
-            panic!("max handle reached - how on earth did you do that?!")
-        }
-        Self(val)
     }
 }
