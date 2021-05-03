@@ -77,12 +77,15 @@ impl CursorManager {
         }
     }
 
-    pub fn draw<'a>(
-        &'a mut self,
-        viewport: &'a Viewport,
-        render_pass: &mut wgpu::RenderPass<'a>,
+    pub fn draw(
+        &mut self,
+        viewport: &Viewport,
+        encoder: &mut wgpu::CommandEncoder,
+        frame_view: &wgpu::TextureView,
+        depth_view: &wgpu::TextureView,
     ) {
-        self.rect_renderer.draw(viewport, render_pass);
+        self.rect_renderer
+            .draw(viewport, encoder, frame_view, depth_view);
     }
 
     pub fn start_pan(&mut self, viewport: &Viewport) {

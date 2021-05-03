@@ -317,35 +317,18 @@ impl State {
             self.gfx.device.create_command_encoder(&Default::default());
 
         {
-            let mut render_pass =
-                encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: None,
-                    color_attachments: &[wgpu::RenderPassColorAttachment {
-                        view: &frame.view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(wgpu::Color {
-                                r: 0.1,
-                                g: 0.2,
-                                b: 0.3,
-                                a: 1.0,
-                            }),
-                            store: true,
-                        },
-                    }],
-                    depth_stencil_attachment: Some(
-                        wgpu::RenderPassDepthStencilAttachment {
-                            view: &self.depth_texture_view,
-                            depth_ops: Some(wgpu::Operations {
-                                load: wgpu::LoadOp::Clear(0.0),
-                                store: true,
-                            }),
-                            stencil_ops: None,
-                        },
-                    ),
-                });
-            self.circuit.draw(&self.viewport, &mut render_pass);
-            self.cursor_manager.draw(&self.viewport, &mut render_pass);
+            self.circuit.draw(
+                &self.viewport,
+                &mut encoder,
+                &frame.view,
+                &self.depth_texture_view,
+            );
+            self.cursor_manager.draw(
+                &self.viewport,
+                &mut encoder,
+                &frame.view,
+                &self.depth_texture_view,
+            );
         }
 
         let size = self.gfx.window.inner_size();

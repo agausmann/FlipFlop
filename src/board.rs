@@ -291,16 +291,46 @@ impl BoardRenderer {
         self.instances.remove(handle)
     }
 
-    pub fn draw<'a>(
-        &'a mut self,
-        viewport: &'a Viewport,
-        render_pass: &mut wgpu::RenderPass<'a>,
+    pub fn draw(
+        &mut self,
+        viewport: &Viewport,
+        encoder: &mut wgpu::CommandEncoder,
+        frame_view: &wgpu::TextureView,
+        depth_view: &wgpu::TextureView,
     ) {
         let instance_count = self.instances.len();
         let instance_buffer = match self.instances.buffer() {
             Some(buffer) => buffer,
             None => return,
         };
+
+        let mut render_pass =
+            encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("BoardRenderer.render_pass"),
+                color_attachments: &[wgpu::RenderPassColorAttachment {
+                    view: &frame_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color {
+                            r: 0.1,
+                            g: 0.2,
+                            b: 0.3,
+                            a: 1.0,
+                        }),
+                        store: true,
+                    },
+                }],
+                depth_stencil_attachment: Some(
+                    wgpu::RenderPassDepthStencilAttachment {
+                        view: depth_view,
+                        depth_ops: Some(wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(0.0),
+                            store: true,
+                        }),
+                        stencil_ops: None,
+                    },
+                ),
+            });
 
         render_pass.set_pipeline(&self.render_pipeline);
         render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));

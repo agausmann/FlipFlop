@@ -33,13 +33,17 @@ impl Circuit {
         }
     }
 
-    pub fn draw<'a>(
-        &'a mut self,
-        viewport: &'a Viewport,
-        render_pass: &mut wgpu::RenderPass<'a>,
+    pub fn draw(
+        &mut self,
+        viewport: &Viewport,
+        encoder: &mut wgpu::CommandEncoder,
+        frame_view: &wgpu::TextureView,
+        depth_view: &wgpu::TextureView,
     ) {
-        self.board_renderer.draw(viewport, render_pass);
-        self.rect_renderer.draw(viewport, render_pass);
+        self.board_renderer
+            .draw(viewport, encoder, frame_view, depth_view);
+        self.rect_renderer
+            .draw(viewport, encoder, frame_view, depth_view);
     }
 
     pub fn tile(&self, pos: IVec2) -> Option<&Tile> {
@@ -89,7 +93,7 @@ impl Circuit {
     }
 
     pub fn delete_pin(&mut self, position: IVec2) {
-        if let Some(&tile) = self.tiles.get(&position) {
+        if let Some(tile) = self.tiles.get(&position).cloned() {
             if let Some(pin_id) = tile.pin {
                 self.remove_pin(pin_id);
             }
@@ -117,7 +121,7 @@ impl Circuit {
     }
 
     pub fn delete_all_at(&mut self, position: IVec2) {
-        if let Some(&tile) = self.tiles.get(&position) {
+        if let Some(tile) = self.tiles.get(&position).cloned() {
             if let Some(pin_id) = tile.pin {
                 self.remove_pin(pin_id);
             }
@@ -142,7 +146,9 @@ impl Circuit {
             .into(),
         );
         let id = self.make_id();
-        self.tiles.entry(position).or_default().pin = Some(id);
+        let tile = self.tiles.entry(position).or_default();
+        tile.pin = Some(id);
+        tile.update_crossover(position, &mut self.rect_renderer);
         self.pins.insert(
             id,
             Pin {
@@ -205,6 +211,7 @@ impl Circuit {
                 }
             }
             assert!(inserted);
+            tile.update_crossover(pos, &mut self.rect_renderer);
         }
         self.wires.insert(id, wire);
         true
@@ -214,6 +221,7 @@ impl Circuit {
         let pin = self.pins.remove(&pin_id).unwrap();
         let tile = self.tiles.get_mut(&pin.position).unwrap();
         tile.pin = None;
+        tile.update_crossover(pin.position, &mut self.rect_renderer);
         self.rect_renderer.remove(&pin.instance);
         pin
     }
@@ -230,6 +238,7 @@ impl Circuit {
                 }
             }
             assert!(removed);
+            tile.update_crossover(tile_pos, &mut self.rect_renderer);
         }
         self.rect_renderer.remove(&wire.instance);
         wire
@@ -241,22 +250,41 @@ impl Circuit {
     }
 }
 
-#[derive(Default, Clone, Copy)]
+#[derive(Default, Clone)]
 pub struct Tile {
     pub pin: Option<u64>,
+    pub crossover: Option<rect::Handle>,
     pub wires: [Option<u64>; 4],
+}
+
+impl Tile {
+    fn update_crossover(
+        &mut self,
+        position: IVec2,
+        renderer: &mut RectRenderer,
+    ) {
+        let wire_count = self.wires.iter().flatten().count();
+        if self.pin.is_some() || wire_count < 2 {
+            if let Some(handle) = self.crossover.take() {
+                renderer.remove(&handle);
+            }
+        } else if wire_count >= 2 && self.crossover.is_none() {
+            let handle = renderer.insert(&rect::Crossover { position }.into());
+            self.crossover = Some(handle);
+        }
+    }
 }
 
 pub struct Pin {
     pub position: IVec2,
-    pub instance: crate::rect::Handle,
+    pub instance: rect::Handle,
     pub power_sources: u32,
 }
 
 pub struct Wire {
     pub start: IVec2,
     pub end: IVec2,
-    pub instance: crate::rect::Handle,
+    pub instance: rect::Handle,
     pub power_sources: u32,
 }
 

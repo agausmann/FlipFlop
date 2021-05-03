@@ -35,16 +35,18 @@ impl Vertex {
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 struct Instance {
     position: [f32; 2],
+    z_index: f32,
     size: [f32; 2],
     color: [f32; 4],
 }
 
-static INSTANCE_ATTRIBUTES: Lazy<[wgpu::VertexAttribute; 3]> =
+static INSTANCE_ATTRIBUTES: Lazy<[wgpu::VertexAttribute; 4]> =
     Lazy::new(|| {
         wgpu::vertex_attr_array![
             1 => Float32x2,
-            2 => Float32x2,
-            3 => Float32x4,
+            2 => Float32,
+            3 => Float32x2,
+            4 => Float32x4,
         ]
     });
 
@@ -60,14 +62,12 @@ impl Instance {
     fn new(rect: &Rect) -> Self {
         Self {
             position: rect.position.into(),
+            z_index: rect.z_index as f32 / u8::MAX as f32,
             size: rect.size.into(),
             color: rect.color.into(),
         }
     }
 }
-
-const WIRE_RADIUS: f32 = 1.0 / 16.0;
-const PIN_RADIUS: f32 = 2.0 / 16.0;
 
 const VERTICES: &[Vertex] = &[
     Vertex {
@@ -148,10 +148,8 @@ impl RectRenderer {
                 },
                 depth_stencil: Some(wgpu::DepthStencilState {
                     format: gfx.depth_format,
-                    //depth_write_enabled: true,
-                    //depth_compare: wgpu::CompareFunction::GreaterEqual,
-                    depth_write_enabled: false,
-                    depth_compare: wgpu::CompareFunction::Always,
+                    depth_write_enabled: true,
+                    depth_compare: wgpu::CompareFunction::GreaterEqual,
                     stencil: Default::default(),
                     bias: Default::default(),
                 }),
@@ -215,16 +213,41 @@ impl RectRenderer {
         self.instances.remove(handle)
     }
 
-    pub fn draw<'a>(
-        &'a mut self,
-        viewport: &'a Viewport,
-        render_pass: &mut wgpu::RenderPass<'a>,
+    pub fn draw(
+        &mut self,
+        viewport: &Viewport,
+        encoder: &mut wgpu::CommandEncoder,
+        frame_view: &wgpu::TextureView,
+        depth_view: &wgpu::TextureView,
     ) {
         let instance_count = self.instances.len();
         let instance_buffer = match self.instances.buffer() {
             Some(buffer) => buffer,
             None => return,
         };
+
+        let mut render_pass =
+            encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("RectRenderer.render_pass"),
+                color_attachments: &[wgpu::RenderPassColorAttachment {
+                    view: &frame_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: true,
+                    },
+                }],
+                depth_stencil_attachment: Some(
+                    wgpu::RenderPassDepthStencilAttachment {
+                        view: depth_view,
+                        depth_ops: Some(wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(0.0),
+                            store: true,
+                        }),
+                        stencil_ops: None,
+                    },
+                ),
+            });
 
         render_pass.set_pipeline(&self.render_pipeline);
         render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
@@ -245,9 +268,19 @@ impl RectRenderer {
 
 pub struct Rect {
     pub position: Vec2,
+    pub z_index: u8,
     pub size: Vec2,
     pub color: Vec4,
 }
+
+const WIRE_RADIUS: f32 = 1.0 / 16.0;
+const PIN_RADIUS: f32 = 2.0 / 16.0;
+const CROSSOVER_RADIUS: f32 = 2.0 / 16.0;
+
+const H_WIRE_Z_INDEX: u8 = 0;
+const V_WIRE_Z_INDEX: u8 = 2;
+const CROSSOVER_Z_INDEX: u8 = 1;
+const PIN_Z_INDEX: u8 = 3;
 
 pub struct Wire {
     pub start: IVec2,
@@ -260,11 +293,20 @@ impl From<Wire> for Rect {
         let position = wire.start;
         let size = wire.end - wire.start;
 
+        let z_index = if size.x == 0 {
+            V_WIRE_Z_INDEX
+        } else if size.y == 0 {
+            H_WIRE_Z_INDEX
+        } else {
+            panic!("illegal wire size");
+        };
+
         // Ensure size is positive so WIRE_RADIUS offset will work correctly.
         let abs_size = size.abs();
         let abs_position = position - (abs_size - size) / 2;
         Self {
             position: abs_position.as_f32() + Vec2::splat(0.5 - WIRE_RADIUS),
+            z_index,
             size: abs_size.as_f32() + Vec2::splat(2.0 * WIRE_RADIUS),
             color: wire_color(wire.is_powered),
         }
@@ -280,8 +322,25 @@ impl From<Pin> for Rect {
     fn from(pin: Pin) -> Self {
         Self {
             position: pin.position.as_f32() + Vec2::splat(0.5 - PIN_RADIUS),
+            z_index: PIN_Z_INDEX,
             size: Vec2::splat(2.0 * PIN_RADIUS),
             color: wire_color(pin.is_powered),
+        }
+    }
+}
+
+pub struct Crossover {
+    pub position: IVec2,
+}
+
+impl From<Crossover> for Rect {
+    fn from(cross: Crossover) -> Self {
+        Self {
+            position: cross.position.as_f32()
+                + Vec2::splat(0.5 - CROSSOVER_RADIUS),
+            z_index: CROSSOVER_Z_INDEX,
+            size: Vec2::splat(2.0 * CROSSOVER_RADIUS),
+            color: Vec4::new(0.5, 0.5, 0.5, 1.0),
         }
     }
 }
