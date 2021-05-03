@@ -1,13 +1,13 @@
 use crate::board::{self, BoardRenderer};
+use crate::rect::{self, RectRenderer};
 use crate::viewport::Viewport;
-use crate::wire::{self, WireRenderer};
 use crate::GraphicsContext;
 use glam::IVec2;
 use std::collections::HashMap;
 
 pub struct Circuit {
     board_renderer: BoardRenderer,
-    wire_renderer: WireRenderer,
+    rect_renderer: RectRenderer,
     last_id: u64,
     tiles: HashMap<IVec2, Tile>,
     pins: HashMap<u64, Pin>,
@@ -25,7 +25,7 @@ impl Circuit {
         });
         Self {
             board_renderer,
-            wire_renderer: WireRenderer::new(gfx, viewport),
+            rect_renderer: RectRenderer::new(gfx, viewport),
             last_id: 0,
             tiles: HashMap::new(),
             pins: HashMap::new(),
@@ -39,7 +39,7 @@ impl Circuit {
         render_pass: &mut wgpu::RenderPass<'a>,
     ) {
         self.board_renderer.draw(viewport, render_pass);
-        self.wire_renderer.draw(viewport, render_pass);
+        self.rect_renderer.draw(viewport, render_pass);
     }
 
     pub fn tile(&self, pos: IVec2) -> Option<&Tile> {
@@ -134,8 +134,8 @@ impl Circuit {
             }
         }
         let power_sources = 0; //TODO detect
-        let instance = self.wire_renderer.insert(
-            &wire::Pin {
+        let instance = self.rect_renderer.insert(
+            &rect::Pin {
                 position,
                 is_powered: power_sources > 0,
             }
@@ -179,8 +179,8 @@ impl Circuit {
         }
 
         let power_sources = 0; //TODO detect
-        let instance = self.wire_renderer.insert(
-            &wire::Wire {
+        let instance = self.rect_renderer.insert(
+            &rect::Wire {
                 start,
                 end,
                 is_powered: power_sources > 0,
@@ -214,7 +214,7 @@ impl Circuit {
         let pin = self.pins.remove(&pin_id).unwrap();
         let tile = self.tiles.get_mut(&pin.position).unwrap();
         tile.pin = None;
-        self.wire_renderer.remove(&pin.instance);
+        self.rect_renderer.remove(&pin.instance);
         pin
     }
 
@@ -231,7 +231,7 @@ impl Circuit {
             }
             assert!(removed);
         }
-        self.wire_renderer.remove(&wire.instance);
+        self.rect_renderer.remove(&wire.instance);
         wire
     }
 
@@ -249,14 +249,14 @@ pub struct Tile {
 
 pub struct Pin {
     pub position: IVec2,
-    pub instance: crate::wire::Handle,
+    pub instance: crate::rect::Handle,
     pub power_sources: u32,
 }
 
 pub struct Wire {
     pub start: IVec2,
     pub end: IVec2,
-    pub instance: crate::wire::Handle,
+    pub instance: crate::rect::Handle,
     pub power_sources: u32,
 }
 

@@ -3,8 +3,8 @@ pub mod circuit;
 pub mod counter;
 pub mod cursor;
 pub mod instance;
+pub mod rect;
 pub mod viewport;
-pub mod wire;
 
 use crate::circuit::Circuit;
 use crate::counter::Counter;

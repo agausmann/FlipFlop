@@ -2,7 +2,7 @@ use crate::instance::InstanceManager;
 use crate::viewport::Viewport;
 use crate::GraphicsContext;
 use bytemuck::{Pod, Zeroable};
-use glam::{IVec2, Vec2};
+use glam::{IVec2, Vec2, Vec4};
 use once_cell::sync::Lazy;
 use std::convert::TryInto;
 use wgpu::util::DeviceExt;
@@ -36,7 +36,7 @@ impl Vertex {
 struct Instance {
     position: [f32; 2],
     size: [f32; 2],
-    is_powered: u32,
+    color: [f32; 4],
 }
 
 static INSTANCE_ATTRIBUTES: Lazy<[wgpu::VertexAttribute; 3]> =
@@ -44,7 +44,7 @@ static INSTANCE_ATTRIBUTES: Lazy<[wgpu::VertexAttribute; 3]> =
         wgpu::vertex_attr_array![
             1 => Float32x2,
             2 => Float32x2,
-            3 => Uint32,
+            3 => Float32x4,
         ]
     });
 
@@ -57,11 +57,11 @@ impl Instance {
         }
     }
 
-    fn new(wire: &WireRect) -> Self {
+    fn new(rect: &Rect) -> Self {
         Self {
-            position: wire.position.into(),
-            size: wire.size.into(),
-            is_powered: wire.is_powered as u32,
+            position: rect.position.into(),
+            size: rect.size.into(),
+            color: rect.color.into(),
         }
     }
 }
@@ -86,37 +86,26 @@ const VERTICES: &[Vertex] = &[
 
 const INDICES: &[u16] = &[0, 1, 2, 0, 2, 3];
 
-pub struct WireRenderer {
-    gfx: GraphicsContext,
+pub struct RectRenderer {
     render_pipeline: wgpu::RenderPipeline,
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
-    wire_color_buffer: wgpu::Buffer,
     bind_group: wgpu::BindGroup,
     instances: InstanceManager<Instance>,
 }
 
-impl WireRenderer {
+impl RectRenderer {
     pub fn new(gfx: &GraphicsContext, viewport: &Viewport) -> Self {
         let bind_group_layout = gfx.device.create_bind_group_layout(
             &wgpu::BindGroupLayoutDescriptor {
-                label: Some("WireRenderer.bind_group_layout"),
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStage::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                }],
+                label: Some("RectRenderer.bind_group_layout"),
+                entries: &[],
             },
         );
 
         let pipeline_layout = gfx.device.create_pipeline_layout(
             &wgpu::PipelineLayoutDescriptor {
-                label: Some("WireRenderer.pipeline_layout"),
+                label: Some("RectRenderer.pipeline_layout"),
                 bind_group_layouts: &[
                     viewport.bind_group_layout(),
                     &bind_group_layout,
@@ -128,17 +117,17 @@ impl WireRenderer {
             gfx.device
                 .create_shader_module(&wgpu::include_spirv!(concat!(
                     env!("OUT_DIR"),
-                    "/shaders/wire.vert.spv"
+                    "/shaders/rect.vert.spv"
                 )));
         let fragment_module =
             gfx.device
                 .create_shader_module(&wgpu::include_spirv!(concat!(
                     env!("OUT_DIR"),
-                    "/shaders/wire.frag.spv"
+                    "/shaders/rect.frag.spv"
                 )));
         let render_pipeline = gfx.device.create_render_pipeline(
             &wgpu::RenderPipelineDescriptor {
-                label: Some("WireRenderer.render_pipeline"),
+                label: Some("RectRenderer.render_pipeline"),
                 layout: Some(&pipeline_layout),
                 vertex: wgpu::VertexState {
                     module: &vertex_module,
@@ -184,68 +173,46 @@ impl WireRenderer {
         let vertex_buffer =
             gfx.device
                 .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("WireRenderer.vertex_buffer"),
+                    label: Some("RectRenderer.vertex_buffer"),
                     contents: bytemuck::cast_slice(VERTICES),
                     usage: wgpu::BufferUsage::VERTEX,
                 });
         let index_buffer =
             gfx.device
                 .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("WireRenderer.index_buffer"),
+                    label: Some("RectRenderer.index_buffer"),
                     contents: bytemuck::cast_slice(INDICES),
                     usage: wgpu::BufferUsage::INDEX,
                 });
 
-        let wire_color_buffer =
-            gfx.device
-                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("WireRenderer.wire_color_buffer"),
-                    contents: bytemuck::bytes_of(&WireColor::default()),
-                    usage: wgpu::BufferUsage::UNIFORM
-                        | wgpu::BufferUsage::COPY_DST,
-                });
-
         let bind_group =
             gfx.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("WireRenderer.bind_group"),
+                label: Some("RectRenderer.bind_group"),
                 layout: &bind_group_layout,
-                entries: &[wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wire_color_buffer.as_entire_binding(),
-                }],
+                entries: &[],
             });
 
         let instances = InstanceManager::new(gfx);
 
         Self {
-            gfx: gfx.clone(),
             render_pipeline,
             vertex_buffer,
             index_buffer,
-            wire_color_buffer,
             bind_group,
             instances,
         }
     }
 
-    pub fn insert(&mut self, wire: &WireRect) -> Handle {
-        self.instances.insert(Instance::new(wire))
+    pub fn insert(&mut self, rect: &Rect) -> Handle {
+        self.instances.insert(Instance::new(rect))
     }
 
-    pub fn update(&mut self, handle: &Handle, wire: &WireRect) {
-        self.instances.update(handle, Instance::new(wire));
+    pub fn update(&mut self, handle: &Handle, rect: &Rect) {
+        self.instances.update(handle, Instance::new(rect));
     }
 
     pub fn remove(&mut self, handle: &Handle) -> bool {
         self.instances.remove(handle)
-    }
-
-    pub fn update_wire_color(&mut self, wire_color: &WireColor) {
-        self.gfx.queue.write_buffer(
-            &self.wire_color_buffer,
-            0,
-            bytemuck::bytes_of(wire_color),
-        );
     }
 
     pub fn draw<'a>(
@@ -276,10 +243,10 @@ impl WireRenderer {
     }
 }
 
-pub struct WireRect {
+pub struct Rect {
     pub position: Vec2,
     pub size: Vec2,
-    pub is_powered: bool,
+    pub color: Vec4,
 }
 
 pub struct Wire {
@@ -288,7 +255,7 @@ pub struct Wire {
     pub is_powered: bool,
 }
 
-impl From<Wire> for WireRect {
+impl From<Wire> for Rect {
     fn from(wire: Wire) -> Self {
         let position = wire.start;
         let size = wire.end - wire.start;
@@ -299,7 +266,7 @@ impl From<Wire> for WireRect {
         Self {
             position: abs_position.as_f32() + Vec2::splat(0.5 - WIRE_RADIUS),
             size: abs_size.as_f32() + Vec2::splat(2.0 * WIRE_RADIUS),
-            is_powered: wire.is_powered,
+            color: wire_color(wire.is_powered),
         }
     }
 }
@@ -309,28 +276,20 @@ pub struct Pin {
     pub is_powered: bool,
 }
 
-impl From<Pin> for WireRect {
+impl From<Pin> for Rect {
     fn from(pin: Pin) -> Self {
         Self {
             position: pin.position.as_f32() + Vec2::splat(0.5 - PIN_RADIUS),
             size: Vec2::splat(2.0 * PIN_RADIUS),
-            is_powered: pin.is_powered,
+            color: wire_color(pin.is_powered),
         }
     }
 }
 
-#[derive(Debug, Clone, Copy, Pod, Zeroable)]
-#[repr(C)]
-pub struct WireColor {
-    pub off_color: [f32; 4],
-    pub on_color: [f32; 4],
-}
-
-impl Default for WireColor {
-    fn default() -> Self {
-        Self {
-            off_color: [0.0, 0.0, 0.0, 1.0],
-            on_color: [0.8, 0.0, 0.0, 1.0],
-        }
+fn wire_color(is_powered: bool) -> Vec4 {
+    if is_powered {
+        Vec4::new(0.8, 0.0, 0.0, 1.0)
+    } else {
+        Vec4::new(0.0, 0.0, 0.0, 1.0)
     }
 }

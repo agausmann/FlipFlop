@@ -1,17 +1,17 @@
+use crate::rect::{self, RectRenderer};
 use crate::viewport::Viewport;
-use crate::wire::{self, WireRenderer};
 use crate::GraphicsContext;
 use glam::{IVec2, Vec2};
 
 pub struct CursorManager {
-    wire_renderer: WireRenderer,
+    rect_renderer: RectRenderer,
     current_mode: CursorMode,
 }
 
 impl CursorManager {
     pub fn new(gfx: &GraphicsContext, viewport: &Viewport) -> Self {
         Self {
-            wire_renderer: WireRenderer::new(gfx, viewport),
+            rect_renderer: RectRenderer::new(gfx, viewport),
             current_mode: CursorMode::Normal,
         }
     }
@@ -48,25 +48,25 @@ impl CursorManager {
                 }
                 *end_position = *start_position + size;
 
-                self.wire_renderer.update(
+                self.rect_renderer.update(
                     start_pin,
-                    &wire::Pin {
+                    &rect::Pin {
                         position: *start_position,
                         is_powered: false,
                     }
                     .into(),
                 );
-                self.wire_renderer.update(
+                self.rect_renderer.update(
                     end_pin,
-                    &wire::Pin {
+                    &rect::Pin {
                         position: *end_position,
                         is_powered: false,
                     }
                     .into(),
                 );
-                self.wire_renderer.update(
+                self.rect_renderer.update(
                     wire,
-                    &wire::Wire {
+                    &rect::Wire {
                         start: *start_position,
                         end: *end_position,
                         is_powered: false,
@@ -82,7 +82,7 @@ impl CursorManager {
         viewport: &'a Viewport,
         render_pass: &mut wgpu::RenderPass<'a>,
     ) {
-        self.wire_renderer.draw(viewport, render_pass);
+        self.rect_renderer.draw(viewport, render_pass);
     }
 
     pub fn start_pan(&mut self, viewport: &Viewport) {
@@ -93,22 +93,22 @@ impl CursorManager {
 
     pub fn start_place(&mut self, viewport: &Viewport) {
         let start_position = viewport.cursor().tile();
-        let start_pin = self.wire_renderer.insert(
-            &wire::Pin {
+        let start_pin = self.rect_renderer.insert(
+            &rect::Pin {
                 position: start_position,
                 is_powered: false,
             }
             .into(),
         );
-        let end_pin = self.wire_renderer.insert(
-            &wire::Pin {
+        let end_pin = self.rect_renderer.insert(
+            &rect::Pin {
                 position: start_position,
                 is_powered: false,
             }
             .into(),
         );
-        let wire = self.wire_renderer.insert(
-            &wire::Wire {
+        let wire = self.rect_renderer.insert(
+            &rect::Wire {
                 start: start_position,
                 end: start_position,
                 is_powered: false,
@@ -138,9 +138,9 @@ impl CursorManager {
                 wire,
                 ..
             } => {
-                self.wire_renderer.remove(start_pin);
-                self.wire_renderer.remove(end_pin);
-                self.wire_renderer.remove(wire);
+                self.rect_renderer.remove(start_pin);
+                self.rect_renderer.remove(end_pin);
+                self.rect_renderer.remove(wire);
             }
         }
         self.current_mode = new_mode;
@@ -155,8 +155,8 @@ pub enum CursorMode {
     Place {
         start_position: IVec2,
         end_position: IVec2,
-        start_pin: wire::Handle,
-        end_pin: wire::Handle,
-        wire: wire::Handle,
+        start_pin: rect::Handle,
+        end_pin: rect::Handle,
+        wire: rect::Handle,
     },
 }
