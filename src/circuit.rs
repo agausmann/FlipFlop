@@ -1,4 +1,5 @@
 use crate::board::{self, BoardRenderer};
+use crate::direction::{Direction, Relative};
 use crate::rect::{self, RectRenderer};
 use crate::viewport::Viewport;
 use crate::GraphicsContext;
@@ -23,9 +24,29 @@ impl Circuit {
             color: [0.1, 0.1, 0.1, 1.0],
             z_index: 0,
         });
+        let mut rect_renderer = RectRenderer::new(gfx, viewport);
+        let flip = Flip {
+            position: IVec2::new(1, 0),
+            orientation: Direction::East,
+            power_sources: 0,
+            output_powered: true,
+        };
+        rect_renderer.insert(&flip.body());
+        rect_renderer.insert(&flip.input());
+        rect_renderer.insert(&flip.output());
+        let flop = Flop {
+            position: IVec2::new(0, 1),
+            orientation: Direction::North,
+            power_sources: 0,
+            output_powered: false,
+        };
+        rect_renderer.insert(&flop.body());
+        rect_renderer.insert(&flop.input());
+        rect_renderer.insert(&flop.output());
+
         Self {
             board_renderer,
-            rect_renderer: RectRenderer::new(gfx, viewport),
+            rect_renderer,
             last_id: 0,
             tiles: HashMap::new(),
             pins: HashMap::new(),
@@ -279,6 +300,85 @@ pub struct Pin {
     pub position: IVec2,
     pub instance: rect::Handle,
     pub power_sources: u32,
+}
+
+pub struct Flip {
+    pub position: IVec2,
+    pub orientation: Direction,
+    pub power_sources: u32,
+    pub output_powered: bool,
+}
+
+impl Flip {
+    fn body(&self) -> rect::Rect {
+        rect::Body {
+            position: self.position,
+        }
+        .into()
+    }
+
+    fn input(&self) -> rect::Rect {
+        rect::Pin {
+            position: self.position,
+            is_powered: self.power_sources > 0,
+        }
+        .into()
+    }
+
+    fn output(&self) -> rect::Rect {
+        rect::Output {
+            position: self.position,
+            orientation: self.orientation,
+            is_powered: self.output_powered,
+        }
+        .into()
+    }
+}
+
+pub struct FlipSprite {
+    pub body: rect::Handle,
+    pub input: rect::Handle,
+    pub output: rect::Handle,
+}
+
+pub struct Flop {
+    pub position: IVec2,
+    pub orientation: Direction,
+    pub power_sources: u32,
+    pub output_powered: bool,
+}
+
+impl Flop {
+    fn body(&self) -> rect::Rect {
+        rect::Body {
+            position: self.position,
+        }
+        .into()
+    }
+
+    fn input(&self) -> rect::Rect {
+        rect::SidePin {
+            position: self.position,
+            orientation: self.orientation.rotate(Relative::Opposite),
+            is_powered: self.power_sources > 0,
+        }
+        .into()
+    }
+
+    fn output(&self) -> rect::Rect {
+        rect::Output {
+            position: self.position,
+            orientation: self.orientation,
+            is_powered: self.output_powered,
+        }
+        .into()
+    }
+}
+
+pub struct FlopSprite {
+    pub body: rect::Handle,
+    pub input: rect::Handle,
+    pub output: rect::Handle,
 }
 
 pub struct Wire {

@@ -2,6 +2,7 @@ pub mod board;
 pub mod circuit;
 pub mod counter;
 pub mod cursor;
+pub mod direction;
 pub mod instance;
 pub mod rect;
 pub mod viewport;
@@ -100,8 +101,7 @@ fn create_swap_chain(gfx: &GraphicsContext) -> wgpu::SwapChain {
             format: gfx.render_format,
             width: gfx.window.inner_size().width,
             height: gfx.window.inner_size().height,
-            //present_mode: wgpu::PresentMode::Fifo,
-            present_mode: wgpu::PresentMode::Mailbox,
+            present_mode: wgpu::PresentMode::Fifo,
         },
     )
 }

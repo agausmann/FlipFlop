@@ -1,3 +1,4 @@
+use crate::direction::Direction;
 use crate::instance::InstanceManager;
 use crate::viewport::Viewport;
 use crate::GraphicsContext;
@@ -275,12 +276,20 @@ pub struct Rect {
 
 const WIRE_RADIUS: f32 = 1.0 / 16.0;
 const PIN_RADIUS: f32 = 2.0 / 16.0;
-const CROSSOVER_RADIUS: f32 = 2.0 / 16.0;
+const CROSSOVER_RADIUS: f32 = 4.0 / 16.0;
+const BODY_RADIUS: f32 = 4.0 / 16.0;
+const OUTPUT_RADIUS: f32 = 2.0 / 16.0;
+const OUTPUT_HEIGHT: f32 = 2.0 / 16.0;
+const SIDE_PIN_DISTANCE: f32 = 2.0 / 16.0;
+const SIDE_PIN_HEIGHT: f32 = 4.0 / 16.0;
 
-const H_WIRE_Z_INDEX: u8 = 0;
-const V_WIRE_Z_INDEX: u8 = 2;
-const CROSSOVER_Z_INDEX: u8 = 1;
-const PIN_Z_INDEX: u8 = 3;
+const H_WIRE_Z_INDEX: u8 = 1;
+const V_WIRE_Z_INDEX: u8 = 3;
+const CROSSOVER_Z_INDEX: u8 = 2;
+const PIN_Z_INDEX: u8 = 4;
+const BODY_Z_INDEX: u8 = 0;
+const OUTPUT_Z_INDEX: u8 = 4;
+const SIDE_PIN_Z_INDEX: u8 = 4;
 
 pub struct Wire {
     pub start: IVec2,
@@ -313,6 +322,21 @@ impl From<Wire> for Rect {
     }
 }
 
+pub struct Body {
+    pub position: IVec2,
+}
+
+impl From<Body> for Rect {
+    fn from(body: Body) -> Self {
+        Self {
+            position: body.position.as_f32() + Vec2::splat(0.5 - BODY_RADIUS),
+            z_index: BODY_Z_INDEX,
+            size: Vec2::splat(2.0 * BODY_RADIUS),
+            color: Vec4::new(1.0, 1.0, 1.0, 1.0),
+        }
+    }
+}
+
 pub struct Pin {
     pub position: IVec2,
     pub is_powered: bool,
@@ -325,6 +349,48 @@ impl From<Pin> for Rect {
             z_index: PIN_Z_INDEX,
             size: Vec2::splat(2.0 * PIN_RADIUS),
             color: wire_color(pin.is_powered),
+        }
+    }
+}
+
+pub struct SidePin {
+    pub position: IVec2,
+    pub orientation: Direction,
+    pub is_powered: bool,
+}
+
+impl From<SidePin> for Rect {
+    fn from(pin: SidePin) -> Self {
+        let transform = Direction::East.to(pin.orientation).transform();
+
+        Self {
+            position: pin.position.as_f32()
+                + Vec2::splat(0.5)
+                + transform * Vec2::new(SIDE_PIN_DISTANCE, -PIN_RADIUS),
+            size: transform * Vec2::new(SIDE_PIN_HEIGHT, 2.0 * PIN_RADIUS),
+            z_index: SIDE_PIN_Z_INDEX,
+            color: wire_color(pin.is_powered),
+        }
+    }
+}
+
+pub struct Output {
+    pub position: IVec2,
+    pub orientation: Direction,
+    pub is_powered: bool,
+}
+
+impl From<Output> for Rect {
+    fn from(output: Output) -> Self {
+        let transform = Direction::East.to(output.orientation).transform();
+
+        Self {
+            position: output.position.as_f32()
+                + Vec2::splat(0.5)
+                + transform * Vec2::new(BODY_RADIUS, -OUTPUT_RADIUS),
+            size: transform * Vec2::new(OUTPUT_HEIGHT, 2.0 * OUTPUT_RADIUS),
+            z_index: OUTPUT_Z_INDEX,
+            color: wire_color(output.is_powered),
         }
     }
 }
