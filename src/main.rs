@@ -166,6 +166,10 @@ impl State {
             WindowEvent::CloseRequested => {
                 self.should_close = true;
             }
+            WindowEvent::Resized(..)
+            | WindowEvent::ScaleFactorChanged { .. } => {
+                self.rebuild_swap_chain();
+            }
             WindowEvent::CursorMoved { position, .. } => {
                 let position = Vec2::new(position.x as f32, position.y as f32);
                 self.viewport.cursor_moved(position);
@@ -296,15 +300,11 @@ impl State {
         let frame = loop {
             match self.swap_chain.get_current_frame() {
                 Ok(frame) => break frame.output,
-                Err(wgpu::SwapChainError::Lost)
-                | Err(wgpu::SwapChainError::Outdated) => {
-                    self.swap_chain = create_swap_chain(&self.gfx);
-
-                    self.depth_texture = create_depth_texture(&self.gfx);
-                    self.depth_texture_view =
-                        self.depth_texture.create_view(&Default::default());
+                Err(wgpu::SwapChainError::Lost) => {
+                    self.rebuild_swap_chain();
                 }
-                Err(wgpu::SwapChainError::Timeout) => {
+                Err(wgpu::SwapChainError::Timeout)
+                | Err(wgpu::SwapChainError::Outdated) => {
                     return Ok(());
                 }
                 Err(err) => {
@@ -374,6 +374,14 @@ impl State {
             tile.and_then(|tile| tile.pin),
             tile.map(|tile| tile.wires),
         )
+    }
+
+    fn rebuild_swap_chain(&mut self) {
+        self.swap_chain = create_swap_chain(&self.gfx);
+
+        self.depth_texture = create_depth_texture(&self.gfx);
+        self.depth_texture_view =
+            self.depth_texture.create_view(&Default::default());
     }
 }
 
