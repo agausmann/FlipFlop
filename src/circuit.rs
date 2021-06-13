@@ -147,13 +147,17 @@ impl Circuit {
                 self.remove_wire(id);
             }
             if let Some(id) = wires.south {
-                self.remove_wire(id);
+                if wires.south != wires.north {
+                    self.remove_wire(id);
+                }
             }
             if let Some(id) = wires.east {
                 self.remove_wire(id);
             }
             if let Some(id) = wires.west {
-                self.remove_wire(id);
+                if wires.west != wires.east {
+                    self.remove_wire(id);
+                }
             }
         }
     }
