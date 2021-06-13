@@ -9,12 +9,14 @@ pub mod rect;
 pub mod viewport;
 
 use crate::circuit::Circuit;
+use crate::circuit::ComponentType;
 use crate::counter::Counter;
 use crate::cursor::{CursorManager, CursorMode};
+use crate::direction::Direction;
 use crate::viewport::Viewport;
 use anyhow::Context;
 use futures_executor::block_on;
-use glam::Vec2;
+use glam::{IVec2, Vec2};
 use std::sync::Arc;
 use std::time::Instant;
 use wgpu_glyph::ab_glyph::FontArc;
@@ -141,7 +143,17 @@ impl State {
 
         let viewport = Viewport::new(&gfx);
 
-        let circuit = Circuit::new(&gfx, &viewport);
+        let mut circuit = Circuit::new(&gfx, &viewport);
+        circuit.place_component(
+            ComponentType::Flip,
+            IVec2::new(1, 0),
+            Direction::North,
+        );
+        circuit.place_component(
+            ComponentType::Flop,
+            IVec2::new(0, 1),
+            Direction::East,
+        );
         let cursor_manager = CursorManager::new(&gfx, &viewport);
 
         Ok(Self {
@@ -206,12 +218,17 @@ impl State {
                                     if self
                                         .circuit
                                         .tile(start_position)
-                                        .and_then(|tile| tile.pin)
+                                        .and_then(|tile| tile.component)
                                         .is_some()
                                     {
-                                        self.circuit.delete_pin(start_position);
+                                        self.circuit
+                                            .delete_component(start_position);
                                     } else {
-                                        self.circuit.place_pin(start_position);
+                                        self.circuit.place_component(
+                                            ComponentType::Pin,
+                                            start_position,
+                                            Direction::East,
+                                        );
                                     }
                                 } else {
                                     self.circuit.place_wire(
@@ -372,7 +389,7 @@ impl State {
             <(f32, f32)>::from(self.viewport.cursor().world_position);
         let cursor_tile = <(i32, i32)>::from(self.viewport.cursor().tile());
         let tile = self.circuit.tile(self.viewport.cursor().tile());
-        let pin = tile.and_then(|tile| tile.pin);
+        let component = tile.and_then(|tile| tile.component);
         let east = tile.and_then(|tile| tile.wires.east);
         let west = tile.and_then(|tile| tile.wires.west);
         let north = tile.and_then(|tile| tile.wires.north);
@@ -383,7 +400,7 @@ impl State {
             Cursor: {:.0?}\n\
             World: {:.2?}\n\
             Tile: {:?}\n\
-            Pin: {:?}\n\
+            Component: {:?}\n\
             East: {:?}\n\
             West: {:?}\n\
             North: {:?}\n\
@@ -392,7 +409,7 @@ impl State {
             cursor_pos,
             world_pos,
             cursor_tile,
-            pin,
+            component,
             east,
             west,
             north,

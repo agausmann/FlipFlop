@@ -267,6 +267,7 @@ impl RectRenderer {
     }
 }
 
+#[derive(Default)]
 pub struct Rect {
     pub position: Vec2,
     pub z_index: u8,

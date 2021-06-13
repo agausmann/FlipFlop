@@ -2,6 +2,22 @@ use std::collections::HashMap;
 use std::ops;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+static NEXT_HANDLE: AtomicU64 = AtomicU64::new(0);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Handle(u64);
+
+impl Handle {
+    fn new() -> Self {
+        let val = NEXT_HANDLE.fetch_add(1, Ordering::Relaxed);
+        // Prevent overflow:
+        if val == u64::MAX {
+            panic!("max depot handle reached")
+        }
+        Self(val)
+    }
+}
+
 pub struct Depot<T> {
     items: HashMap<Handle, T>,
 }
@@ -53,21 +69,5 @@ impl<'a, T> ops::Index<&'a Handle> for Depot<T> {
 impl<'a, T> ops::IndexMut<&'a Handle> for Depot<T> {
     fn index_mut(&mut self, idx: &'a Handle) -> &mut Self::Output {
         self.get_mut(idx)
-    }
-}
-
-static NEXT_HANDLE: AtomicU64 = AtomicU64::new(0);
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Handle(u64);
-
-impl Handle {
-    fn new() -> Self {
-        let val = NEXT_HANDLE.fetch_add(1, Ordering::Relaxed);
-        // Prevent overflow:
-        if val == u64::MAX {
-            panic!("max depot handle reached")
-        }
-        Self(val)
     }
 }

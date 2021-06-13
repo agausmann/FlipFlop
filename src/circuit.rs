@@ -1,6 +1,6 @@
 use crate::board::{self, BoardRenderer};
 use crate::depot::{self, Depot};
-use crate::direction::{Direction, Relative};
+use crate::direction::Direction;
 use crate::rect::{self, RectRenderer};
 use crate::viewport::Viewport;
 use crate::GraphicsContext;
@@ -11,44 +11,25 @@ pub struct Circuit {
     board_renderer: BoardRenderer,
     rect_renderer: RectRenderer,
     tiles: HashMap<IVec2, Tile>,
-    pins: Depot<Pin>,
+    components: Depot<Component>,
     wires: Depot<Wire>,
 }
 
 impl Circuit {
     pub fn new(gfx: &GraphicsContext, viewport: &Viewport) -> Self {
-        let mut board_renderer = BoardRenderer::new(gfx, &viewport);
+        let mut board_renderer = BoardRenderer::new(gfx, viewport);
         board_renderer.insert(&board::Board {
             position: IVec2::new(-10_000, -10_000),
             size: IVec2::new(20_000, 20_000),
             color: [0.1, 0.1, 0.1, 1.0],
             z_index: 0,
         });
-        let mut rect_renderer = RectRenderer::new(gfx, viewport);
-        let flip = Flip {
-            position: IVec2::new(1, 0),
-            orientation: Direction::East,
-            power_sources: 0,
-            output_powered: true,
-        };
-        rect_renderer.insert(&flip.body());
-        rect_renderer.insert(&flip.input());
-        rect_renderer.insert(&flip.output());
-        let flop = Flop {
-            position: IVec2::new(0, 1),
-            orientation: Direction::North,
-            power_sources: 0,
-            output_powered: false,
-        };
-        rect_renderer.insert(&flop.body());
-        rect_renderer.insert(&flop.input());
-        rect_renderer.insert(&flop.output());
 
         Self {
             board_renderer,
-            rect_renderer,
+            rect_renderer: RectRenderer::new(gfx, viewport),
             tiles: HashMap::new(),
-            pins: Depot::new(),
+            components: Depot::new(),
             wires: Depot::new(),
         }
     }
@@ -71,31 +52,40 @@ impl Circuit {
     }
 
     pub fn place_wire(&mut self, start: IVec2, end: IVec2) {
-        self.place_pin(start);
-        self.place_pin(end);
+        self.place_component(ComponentType::Pin, start, Direction::East);
+        self.place_component(ComponentType::Pin, end, Direction::East);
 
-        // Split the wire at every tile where a pin is present.
-        let pin_points: Vec<IVec2> = tiles(start, end)
+        // Split the wire at every tile where a component is present.
+        let split_points: Vec<IVec2> = tiles(start, end)
             .filter(|pos| {
-                self.tiles.get(&pos).and_then(|tile| tile.pin).is_some()
+                self.tiles
+                    .get(&pos)
+                    .and_then(|tile| tile.component)
+                    .is_some()
             })
             .collect();
 
-        for v in pin_points.windows(2) {
+        for v in split_points.windows(2) {
             let sub_start = v[0];
             let sub_end = v[1];
             self.insert_wire(sub_start, sub_end);
         }
     }
 
-    pub fn place_pin(&mut self, position: IVec2) {
+    pub fn place_component(
+        &mut self,
+        ty: ComponentType,
+        position: IVec2,
+        orientation: Direction,
+    ) {
         let tile = self.tiles.entry(position).or_default();
-        if tile.pin.is_some() {
+        if tile.component.is_some() {
             return;
         }
 
         // Logically split wires that pass over this tile,
         // so they connect through the pin.
+        // TODO adapt this logic for the placement rules of other components.
         let wires = tile.wires.clone();
         if let Some(wire_id) = wires.north {
             if wires.north == wires.south {
@@ -112,15 +102,17 @@ impl Circuit {
             }
         }
 
-        self.insert_pin(position);
+        self.insert_component(ty, position, orientation);
     }
 
-    pub fn delete_pin(&mut self, position: IVec2) {
+    pub fn delete_component(&mut self, position: IVec2) {
         if let Some(tile) = self.tiles.get(&position).cloned() {
-            if let Some(pin_id) = tile.pin {
-                self.remove_pin(pin_id);
+            if let Some(component_id) = tile.component {
+                self.remove_component(component_id);
             }
 
+            // Merge opposite wires into a single one passing over this tile.
+            // TODO adapt this logic for the placement rules of other components.
             let wires = tile.wires.clone();
             let north = wires.north.map(|id| self.remove_wire(id));
             let east = wires.east.map(|id| self.remove_wire(id));
@@ -138,8 +130,8 @@ impl Circuit {
 
     pub fn delete_all_at(&mut self, position: IVec2) {
         if let Some(tile) = self.tiles.get(&position).cloned() {
-            if let Some(pin_id) = tile.pin {
-                self.remove_pin(pin_id);
+            if let Some(component_id) = tile.component {
+                self.remove_component(component_id);
             }
 
             let wires = tile.wires.clone();
@@ -162,27 +154,67 @@ impl Circuit {
         }
     }
 
-    fn insert_pin(&mut self, position: IVec2) -> bool {
+    fn insert_component(
+        &mut self,
+        ty: ComponentType,
+        position: IVec2,
+        orientation: Direction,
+    ) -> bool {
         if let Some(tile) = self.tiles.get(&position) {
-            if tile.pin.is_some() {
+            if tile.component.is_some() {
                 return false;
             }
         }
-        let power_sources = 0; //TODO detect
-        let instance = self.rect_renderer.insert(
-            &rect::Pin {
-                position,
-                is_powered: power_sources > 0,
+        let data = match ty {
+            ComponentType::Pin => {
+                let power_sources = 0; //TODO detect
+                let state = Pin { power_sources };
+                let sprite = self.rect_renderer.insert(&Default::default());
+                ComponentData::Pin(state, sprite)
             }
-            .into(),
-        );
-        let id = self.pins.insert(Pin {
+            ComponentType::Flip => {
+                let power_sources = 0; //TODO detect
+                let state = Flip {
+                    power_sources,
+                    output_powered: power_sources == 0,
+                };
+                let body = self.rect_renderer.insert(&Default::default());
+                let input = self.rect_renderer.insert(&Default::default());
+                let output = self.rect_renderer.insert(&Default::default());
+                let sprite = FlipSprite {
+                    body,
+                    input,
+                    output,
+                };
+                ComponentData::Flip(state, sprite)
+            }
+            ComponentType::Flop => {
+                let power_sources = 0; //TODO detect
+                let state = Flop {
+                    power_sources,
+                    output_powered: power_sources > 0,
+                };
+                let body = self.rect_renderer.insert(&Default::default());
+                let input = self.rect_renderer.insert(&Default::default());
+                let output = self.rect_renderer.insert(&Default::default());
+                let sprite = FlopSprite {
+                    body,
+                    input,
+                    output,
+                };
+                ComponentData::Flop(state, sprite)
+            }
+        };
+        let component = Component {
+            data,
             position,
-            instance,
-            power_sources,
-        });
+            orientation,
+        };
+        component.update_sprite(&mut self.rect_renderer);
+
+        let id = self.components.insert(component);
         let tile = self.tiles.entry(position).or_default();
-        tile.pin = Some(id);
+        tile.component = Some(id);
         tile.update_crossover(position, &mut self.rect_renderer);
         true
     }
@@ -240,13 +272,27 @@ impl Circuit {
         true
     }
 
-    fn remove_pin(&mut self, pin_id: depot::Handle) -> Pin {
-        let pin = self.pins.remove(&pin_id);
-        let tile = self.tiles.get_mut(&pin.position).unwrap();
-        tile.pin = None;
-        tile.update_crossover(pin.position, &mut self.rect_renderer);
-        self.rect_renderer.remove(&pin.instance);
-        pin
+    fn remove_component(&mut self, component_id: depot::Handle) -> Component {
+        let component = self.components.remove(&component_id);
+        let tile = self.tiles.get_mut(&component.position).unwrap();
+        tile.component = None;
+        tile.update_crossover(component.position, &mut self.rect_renderer);
+        match &component.data {
+            ComponentData::Pin(_, instance) => {
+                self.rect_renderer.remove(instance);
+            }
+            ComponentData::Flip(_, sprite) => {
+                self.rect_renderer.remove(&sprite.body);
+                self.rect_renderer.remove(&sprite.input);
+                self.rect_renderer.remove(&sprite.output);
+            }
+            ComponentData::Flop(_, sprite) => {
+                self.rect_renderer.remove(&sprite.body);
+                self.rect_renderer.remove(&sprite.input);
+                self.rect_renderer.remove(&sprite.output);
+            }
+        }
+        component
     }
 
     fn remove_wire(&mut self, wire_id: depot::Handle) -> Wire {
@@ -273,7 +319,7 @@ impl Circuit {
 
 #[derive(Default, Clone)]
 pub struct Tile {
-    pub pin: Option<depot::Handle>,
+    pub component: Option<depot::Handle>,
     pub crossover: Option<rect::Handle>,
     pub wires: TileWires,
 }
@@ -285,7 +331,7 @@ impl Tile {
         renderer: &mut RectRenderer,
     ) {
         let wire_count = self.wires.count();
-        if self.pin.is_some() || wire_count < 2 {
+        if self.component.is_some() || wire_count < 2 {
             if let Some(handle) = self.crossover.take() {
                 renderer.remove(&handle);
             }
@@ -348,96 +394,125 @@ impl TileWires {
     }
 }
 
-pub struct Pin {
-    pub position: IVec2,
-    pub instance: rect::Handle,
-    pub power_sources: u32,
+pub enum ComponentType {
+    Pin,
+    Flip,
+    Flop,
 }
 
-pub struct Flip {
-    pub position: IVec2,
-    pub orientation: Direction,
-    pub power_sources: u32,
-    pub output_powered: bool,
+struct Component {
+    data: ComponentData,
+    position: IVec2,
+    orientation: Direction,
 }
 
-impl Flip {
-    fn body(&self) -> rect::Rect {
-        rect::Body {
-            position: self.position,
-        }
-        .into()
+impl Component {
+    fn update_sprite(&self, rect_renderer: &mut RectRenderer) {
+        match &self.data {
+            ComponentData::Pin(state, sprite) => {
+                rect_renderer.update(
+                    sprite,
+                    &rect::Pin {
+                        position: self.position,
+                        is_powered: state.power_sources > 0,
+                    }
+                    .into(),
+                );
+            }
+            ComponentData::Flip(state, sprite) => {
+                rect_renderer.update(
+                    &sprite.body,
+                    &rect::Body {
+                        position: self.position,
+                    }
+                    .into(),
+                );
+                rect_renderer.update(
+                    &sprite.input,
+                    &rect::Pin {
+                        position: self.position,
+                        is_powered: state.power_sources > 0,
+                    }
+                    .into(),
+                );
+                rect_renderer.update(
+                    &sprite.output,
+                    &rect::Output {
+                        position: self.position,
+                        orientation: self.orientation,
+                        is_powered: state.output_powered,
+                    }
+                    .into(),
+                );
+            }
+            ComponentData::Flop(state, sprite) => {
+                rect_renderer.update(
+                    &sprite.body,
+                    &rect::Body {
+                        position: self.position,
+                    }
+                    .into(),
+                );
+                rect_renderer.update(
+                    &sprite.input,
+                    &rect::SidePin {
+                        position: self.position,
+                        orientation: self.orientation.opposite(),
+                        is_powered: state.power_sources > 0,
+                    }
+                    .into(),
+                );
+                rect_renderer.update(
+                    &sprite.output,
+                    &rect::Output {
+                        position: self.position,
+                        orientation: self.orientation,
+                        is_powered: state.output_powered,
+                    }
+                    .into(),
+                );
+            }
+        };
     }
-
-    fn input(&self) -> rect::Rect {
-        rect::Pin {
-            position: self.position,
-            is_powered: self.power_sources > 0,
-        }
-        .into()
-    }
-
-    fn output(&self) -> rect::Rect {
-        rect::Output {
-            position: self.position,
-            orientation: self.orientation,
-            is_powered: self.output_powered,
-        }
-        .into()
-    }
 }
 
-pub struct FlipSprite {
-    pub body: rect::Handle,
-    pub input: rect::Handle,
-    pub output: rect::Handle,
+enum ComponentData {
+    Pin(Pin, rect::Handle),
+    Flip(Flip, FlipSprite),
+    Flop(Flop, FlopSprite),
 }
 
-pub struct Flop {
-    pub position: IVec2,
-    pub orientation: Direction,
-    pub power_sources: u32,
-    pub output_powered: bool,
+struct Pin {
+    power_sources: u32,
 }
 
-impl Flop {
-    fn body(&self) -> rect::Rect {
-        rect::Body {
-            position: self.position,
-        }
-        .into()
-    }
-
-    fn input(&self) -> rect::Rect {
-        rect::SidePin {
-            position: self.position,
-            orientation: self.orientation.rotate(Relative::Opposite),
-            is_powered: self.power_sources > 0,
-        }
-        .into()
-    }
-
-    fn output(&self) -> rect::Rect {
-        rect::Output {
-            position: self.position,
-            orientation: self.orientation,
-            is_powered: self.output_powered,
-        }
-        .into()
-    }
+struct Flip {
+    power_sources: u32,
+    output_powered: bool,
 }
 
-pub struct FlopSprite {
-    pub body: rect::Handle,
-    pub input: rect::Handle,
-    pub output: rect::Handle,
+struct FlipSprite {
+    body: rect::Handle,
+    input: rect::Handle,
+    output: rect::Handle,
 }
 
-pub struct Wire {
-    pub start: IVec2,
-    pub end: IVec2,
-    pub instance: rect::Handle,
-    pub power_sources: u32,
+struct Flop {
+    power_sources: u32,
+    output_powered: bool,
+}
+
+struct FlopSprite {
+    body: rect::Handle,
+    input: rect::Handle,
+    output: rect::Handle,
+}
+
+struct Wire {
+    start: IVec2,
+    end: IVec2,
+    power_sources: u32,
+    instance: rect::Handle,
 }
 
 impl Wire {
