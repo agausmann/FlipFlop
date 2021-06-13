@@ -1,4 +1,5 @@
 use crate::board::{self, BoardRenderer};
+use crate::depot::{self, Depot};
 use crate::direction::{Direction, Relative};
 use crate::rect::{self, RectRenderer};
 use crate::viewport::Viewport;
@@ -9,10 +10,9 @@ use std::collections::HashMap;
 pub struct Circuit {
     board_renderer: BoardRenderer,
     rect_renderer: RectRenderer,
-    last_id: u64,
     tiles: HashMap<IVec2, Tile>,
-    pins: HashMap<u64, Pin>,
-    wires: HashMap<u64, Wire>,
+    pins: Depot<Pin>,
+    wires: Depot<Wire>,
 }
 
 impl Circuit {
@@ -47,10 +47,9 @@ impl Circuit {
         Self {
             board_renderer,
             rect_renderer,
-            last_id: 0,
             tiles: HashMap::new(),
-            pins: HashMap::new(),
-            wires: HashMap::new(),
+            pins: Depot::new(),
+            wires: Depot::new(),
         }
     }
 
@@ -69,14 +68,6 @@ impl Circuit {
 
     pub fn tile(&self, pos: IVec2) -> Option<&Tile> {
         self.tiles.get(&pos)
-    }
-
-    pub fn pin(&self, id: u64) -> Option<&Pin> {
-        self.pins.get(&id)
-    }
-
-    pub fn wire(&self, id: u64) -> Option<&Wire> {
-        self.wires.get(&id)
     }
 
     pub fn place_wire(&mut self, start: IVec2, end: IVec2) {
@@ -103,11 +94,22 @@ impl Circuit {
             return;
         }
 
+        // Logically split wires that pass over this tile,
+        // so they connect through the pin.
         let wires = tile.wires.clone();
-        for &wire_id in wires.iter().flatten() {
-            let wire = self.remove_wire(wire_id);
-            self.insert_wire(wire.start, position);
-            self.insert_wire(position, wire.end);
+        if let Some(wire_id) = wires.north {
+            if wires.north == wires.south {
+                let wire = self.remove_wire(wire_id);
+                self.insert_wire(wire.start, position);
+                self.insert_wire(position, wire.end);
+            }
+        }
+        if let Some(wire_id) = wires.east {
+            if wires.east == wires.west {
+                let wire = self.remove_wire(wire_id);
+                self.insert_wire(wire.start, position);
+                self.insert_wire(position, wire.end);
+            }
         }
 
         self.insert_pin(position);
@@ -118,25 +120,18 @@ impl Circuit {
             if let Some(pin_id) = tile.pin {
                 self.remove_pin(pin_id);
             }
-            let mut endpoints = Vec::new();
-            for &wire_id in tile.wires.iter().flatten() {
-                let wire = self.remove_wire(wire_id);
-                if wire.start == position {
-                    endpoints.push(wire.end);
-                } else if wire.end == position {
-                    endpoints.push(wire.start);
-                } else {
-                    panic!("wire is not connected to this tile");
-                }
+
+            let wires = tile.wires.clone();
+            let north = wires.north.map(|id| self.remove_wire(id));
+            let east = wires.east.map(|id| self.remove_wire(id));
+            let south = wires.south.map(|id| self.remove_wire(id));
+            let west = wires.west.map(|id| self.remove_wire(id));
+
+            if let (Some(north), Some(south)) = (north, south) {
+                self.insert_wire(south.start, north.end);
             }
-            for i in 1..endpoints.len() {
-                for j in 0..i {
-                    if endpoints[i].x == endpoints[j].x
-                        || endpoints[i].y == endpoints[j].y
-                    {
-                        self.insert_wire(endpoints[i], endpoints[j]);
-                    }
-                }
+            if let (Some(east), Some(west)) = (east, west) {
+                self.insert_wire(west.start, east.end);
             }
         }
     }
@@ -146,8 +141,19 @@ impl Circuit {
             if let Some(pin_id) = tile.pin {
                 self.remove_pin(pin_id);
             }
-            for &wire_id in tile.wires.iter().flatten() {
-                self.remove_wire(wire_id);
+
+            let wires = tile.wires.clone();
+            if let Some(id) = wires.north {
+                self.remove_wire(id);
+            }
+            if let Some(id) = wires.south {
+                self.remove_wire(id);
+            }
+            if let Some(id) = wires.east {
+                self.remove_wire(id);
+            }
+            if let Some(id) = wires.west {
+                self.remove_wire(id);
             }
         }
     }
@@ -166,18 +172,14 @@ impl Circuit {
             }
             .into(),
         );
-        let id = self.make_id();
+        let id = self.pins.insert(Pin {
+            position,
+            instance,
+            power_sources,
+        });
         let tile = self.tiles.entry(position).or_default();
         tile.pin = Some(id);
         tile.update_crossover(position, &mut self.rect_renderer);
-        self.pins.insert(
-            id,
-            Pin {
-                position,
-                instance,
-                power_sources,
-            },
-        );
         true
     }
 
@@ -197,7 +199,7 @@ impl Circuit {
         );
 
         if let Some(tile) = self.tiles.get(&start) {
-            for &id in tile.wires.iter().flatten() {
+            for &id in tile.wires.as_array().iter().flatten() {
                 let wire = &self.wires[&id];
                 if wire.start == start && wire.end == end {
                     return false;
@@ -214,32 +216,28 @@ impl Circuit {
             }
             .into(),
         );
-        let id = self.make_id();
-        let wire = Wire {
+        let id = self.wires.insert(Wire {
             start,
             end,
             instance,
             power_sources,
-        };
+        });
+        let wire = self.wires.get(&id);
         for pos in wire.tiles() {
             let tile = self.tiles.entry(pos).or_default();
-            let mut inserted = false;
-            for slot in tile.wires.iter_mut() {
-                if slot.is_none() {
-                    inserted = true;
-                    *slot = Some(id);
-                    break;
-                }
+            if pos != wire.start {
+                *tile.wires.get_mut(wire.direction().opposite()) = Some(id);
             }
-            assert!(inserted);
+            if pos != wire.end {
+                *tile.wires.get_mut(wire.direction()) = Some(id);
+            }
             tile.update_crossover(pos, &mut self.rect_renderer);
         }
-        self.wires.insert(id, wire);
         true
     }
 
-    fn remove_pin(&mut self, pin_id: u64) -> Pin {
-        let pin = self.pins.remove(&pin_id).unwrap();
+    fn remove_pin(&mut self, pin_id: depot::Handle) -> Pin {
+        let pin = self.pins.remove(&pin_id);
         let tile = self.tiles.get_mut(&pin.position).unwrap();
         tile.pin = None;
         tile.update_crossover(pin.position, &mut self.rect_renderer);
@@ -247,35 +245,33 @@ impl Circuit {
         pin
     }
 
-    fn remove_wire(&mut self, wire_id: u64) -> Wire {
-        let wire = self.wires.remove(&wire_id).unwrap();
+    fn remove_wire(&mut self, wire_id: depot::Handle) -> Wire {
+        let wire = self.wires.remove(&wire_id);
         for tile_pos in wire.tiles() {
             let tile = self.tiles.get_mut(&tile_pos).unwrap();
-            let mut removed = false;
-            for slot in &mut tile.wires {
-                if *slot == Some(wire_id) {
-                    removed = true;
-                    *slot = None;
-                }
+            if tile_pos != wire.start {
+                assert!(
+                    tile.wires.get(wire.direction().opposite())
+                        == Some(wire_id)
+                );
+                *tile.wires.get_mut(wire.direction().opposite()) = None;
             }
-            assert!(removed);
+            if tile_pos != wire.end {
+                assert!(tile.wires.get(wire.direction()) == Some(wire_id));
+                *tile.wires.get_mut(wire.direction()) = None;
+            }
             tile.update_crossover(tile_pos, &mut self.rect_renderer);
         }
         self.rect_renderer.remove(&wire.instance);
         wire
     }
-
-    fn make_id(&mut self) -> u64 {
-        self.last_id += 1;
-        self.last_id
-    }
 }
 
 #[derive(Default, Clone)]
 pub struct Tile {
-    pub pin: Option<u64>,
+    pub pin: Option<depot::Handle>,
     pub crossover: Option<rect::Handle>,
-    pub wires: [Option<u64>; 4],
+    pub wires: TileWires,
 }
 
 impl Tile {
@@ -284,7 +280,7 @@ impl Tile {
         position: IVec2,
         renderer: &mut RectRenderer,
     ) {
-        let wire_count = self.wires.iter().flatten().count();
+        let wire_count = self.wires.count();
         if self.pin.is_some() || wire_count < 2 {
             if let Some(handle) = self.crossover.take() {
                 renderer.remove(&handle);
@@ -293,6 +289,58 @@ impl Tile {
             let handle = renderer.insert(&rect::Crossover { position }.into());
             self.crossover = Some(handle);
         }
+    }
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct TileWires {
+    pub east: Option<depot::Handle>,
+    pub north: Option<depot::Handle>,
+    pub west: Option<depot::Handle>,
+    pub south: Option<depot::Handle>,
+}
+
+impl TileWires {
+    pub fn count(&self) -> usize {
+        let mut sum = 0;
+        if self.east.is_some() {
+            sum += 1;
+        }
+        if self.north.is_some() {
+            sum += 1;
+        }
+        if self.west.is_some() && self.west != self.east {
+            sum += 1;
+        }
+        if self.south.is_some() && self.south != self.north {
+            sum += 1;
+        }
+        sum
+    }
+
+    pub fn get(&self, direction: Direction) -> Option<depot::Handle> {
+        match direction {
+            Direction::East => self.east,
+            Direction::North => self.north,
+            Direction::West => self.west,
+            Direction::South => self.south,
+        }
+    }
+
+    pub fn get_mut(
+        &mut self,
+        direction: Direction,
+    ) -> &mut Option<depot::Handle> {
+        match direction {
+            Direction::East => &mut self.east,
+            Direction::North => &mut self.north,
+            Direction::West => &mut self.west,
+            Direction::South => &mut self.south,
+        }
+    }
+
+    pub fn as_array(&self) -> [Option<depot::Handle>; 4] {
+        [self.east, self.north, self.west, self.south]
     }
 }
 
@@ -391,6 +439,14 @@ pub struct Wire {
 impl Wire {
     fn tiles(&self) -> impl Iterator<Item = IVec2> {
         tiles(self.start, self.end)
+    }
+
+    fn direction(&self) -> Direction {
+        if self.start.x == self.end.x {
+            Direction::North
+        } else {
+            Direction::East
+        }
     }
 }
 

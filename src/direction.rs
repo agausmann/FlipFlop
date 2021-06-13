@@ -9,6 +9,18 @@ pub enum Direction {
 }
 
 impl Direction {
+    pub fn right(self) -> Self {
+        self.rotate(Relative::Right)
+    }
+
+    pub fn left(self) -> Self {
+        self.rotate(Relative::Left)
+    }
+
+    pub fn opposite(self) -> Self {
+        self.rotate(Relative::Opposite)
+    }
+
     pub fn rotate(self, relative: Relative) -> Self {
         match (self, relative) {
             (Self::East, Relative::Same) => Self::East,

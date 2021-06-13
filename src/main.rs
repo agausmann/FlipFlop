@@ -2,6 +2,7 @@ pub mod board;
 pub mod circuit;
 pub mod counter;
 pub mod cursor;
+pub mod depot;
 pub mod direction;
 pub mod instance;
 pub mod rect;
@@ -364,15 +365,38 @@ impl State {
     }
 
     fn debug_text(&self) -> String {
+        let fps = self.frame_counter.rate();
+        let cursor_pos =
+            <(f32, f32)>::from(self.viewport.cursor().screen_position);
+        let world_pos =
+            <(f32, f32)>::from(self.viewport.cursor().world_position);
+        let cursor_tile = <(i32, i32)>::from(self.viewport.cursor().tile());
         let tile = self.circuit.tile(self.viewport.cursor().tile());
+        let pin = tile.and_then(|tile| tile.pin);
+        let east = tile.and_then(|tile| tile.wires.east);
+        let west = tile.and_then(|tile| tile.wires.west);
+        let north = tile.and_then(|tile| tile.wires.north);
+        let south = tile.and_then(|tile| tile.wires.south);
+
         format!(
-            "FPS: {:.0}\nCursor: {:.0?}\nWorld: {:.2?}\nTile: {:?}\nPin: {:?}\nWires: {:?}",
-            self.frame_counter.rate(),
-            <(f32, f32)>::from(self.viewport.cursor().screen_position),
-            <(f32, f32)>::from(self.viewport.cursor().world_position),
-            <(i32, i32)>::from(self.viewport.cursor().tile()),
-            tile.and_then(|tile| tile.pin),
-            tile.map(|tile| tile.wires),
+            "FPS: {:.0}\n\
+            Cursor: {:.0?}\n\
+            World: {:.2?}\n\
+            Tile: {:?}\n\
+            Pin: {:?}\n\
+            East: {:?}\n\
+            West: {:?}\n\
+            North: {:?}\n\
+            South: {:?}",
+            fps,
+            cursor_pos,
+            world_pos,
+            cursor_tile,
+            pin,
+            east,
+            west,
+            north,
+            south,
         )
     }
 
