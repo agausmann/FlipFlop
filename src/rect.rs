@@ -292,9 +292,34 @@ const BODY_Z_INDEX: u8 = 0;
 const OUTPUT_Z_INDEX: u8 = 4;
 const SIDE_PIN_Z_INDEX: u8 = 4;
 
+pub enum WireConnection {
+    Pin,
+    SidePin,
+    Output,
+}
+
+impl WireConnection {
+    // Offset from the center of the tile in tile coordinates.
+    fn offset(&self) -> f32 {
+        match self {
+            Self::Pin => 0.0,
+            Self::SidePin => SIDE_PIN_DISTANCE + SIDE_PIN_HEIGHT,
+            Self::Output => BODY_RADIUS + OUTPUT_HEIGHT,
+        }
+    }
+}
+
+impl Default for WireConnection {
+    fn default() -> Self {
+        Self::Pin
+    }
+}
+
 pub struct Wire {
     pub start: IVec2,
     pub end: IVec2,
+    pub start_connection: WireConnection,
+    pub end_connection: WireConnection,
     pub is_powered: bool,
 }
 
@@ -303,21 +328,30 @@ impl From<Wire> for Rect {
         let position = wire.start;
         let size = wire.end - wire.start;
 
-        let z_index = if size.x == 0 {
-            V_WIRE_Z_INDEX
+        let (z_index, axis) = if size.x == 0 {
+            (V_WIRE_Z_INDEX, Vec2::Y)
         } else if size.y == 0 {
-            H_WIRE_Z_INDEX
+            (H_WIRE_Z_INDEX, Vec2::X)
         } else {
             panic!("illegal wire size");
         };
 
-        // Ensure size is positive so WIRE_RADIUS offset will work correctly.
+        // Ensure size is positive so offsets will work correctly.
         let abs_size = size.abs();
         let abs_position = position - (abs_size - size) / 2;
+        // Re-order start/end connections.
+        let (start_conn, end_conn) = if size.x + size.y > 0 {
+            (wire.start_connection, wire.end_connection)
+        } else {
+            (wire.end_connection, wire.start_connection)
+        };
         Self {
-            position: abs_position.as_f32() + Vec2::splat(0.5 - WIRE_RADIUS),
+            position: abs_position.as_f32()
+                + Vec2::splat(0.5 - WIRE_RADIUS)
+                + Vec2::splat(start_conn.offset()) * axis,
             z_index,
-            size: abs_size.as_f32() + Vec2::splat(2.0 * WIRE_RADIUS),
+            size: abs_size.as_f32() + Vec2::splat(2.0 * WIRE_RADIUS)
+                - Vec2::splat(start_conn.offset() + end_conn.offset()) * axis,
             color: wire_color(wire.is_powered),
         }
     }

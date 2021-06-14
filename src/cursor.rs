@@ -69,6 +69,8 @@ impl CursorManager {
                     &rect::Wire {
                         start: *start_position,
                         end: *end_position,
+                        start_connection: Default::default(),
+                        end_connection: Default::default(),
                         is_powered: false,
                     }
                     .into(),
@@ -114,6 +116,8 @@ impl CursorManager {
             &rect::Wire {
                 start: start_position,
                 end: start_position,
+                start_connection: Default::default(),
+                end_connection: Default::default(),
                 is_powered: false,
             }
             .into(),

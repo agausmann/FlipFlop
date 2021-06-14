@@ -1,7 +1,7 @@
 use crate::board::{self, BoardRenderer};
 use crate::depot::{self, Depot};
 use crate::direction::Direction;
-use crate::rect::{self, RectRenderer};
+use crate::rect::{self, RectRenderer, WireConnection};
 use crate::viewport::Viewport;
 use crate::GraphicsContext;
 use glam::IVec2;
@@ -360,7 +360,21 @@ impl Circuit {
             power_sources,
         });
         let wire = self.wires.get(&id);
-        wire.update_sprite(&mut self.rect_renderer);
+        let start_connection = self
+            .component_at(start)
+            .map(|component| component.connection_type(wire.direction()))
+            .unwrap_or(Default::default());
+        let end_connection = self
+            .component_at(end)
+            .map(|component| {
+                component.connection_type(wire.direction().opposite())
+            })
+            .unwrap_or(Default::default());
+        wire.update_sprite(
+            start_connection,
+            end_connection,
+            &mut self.rect_renderer,
+        );
         for pos in wire.tiles() {
             let tile = self.tiles.entry(pos).or_default();
             if pos != wire.start {
@@ -416,6 +430,12 @@ impl Circuit {
         }
         self.rect_renderer.remove(&wire.instance);
         wire
+    }
+
+    fn component_at(&self, position: IVec2) -> Option<&Component> {
+        self.tile(position)
+            .and_then(|tile| tile.component)
+            .map(|id| self.components.get(&id))
     }
 }
 
@@ -515,6 +535,26 @@ impl Component {
             ComponentData::Pin(..) => ComponentType::Pin,
             ComponentData::Flip(..) => ComponentType::Flip,
             ComponentData::Flop(..) => ComponentType::Flop,
+        }
+    }
+
+    fn connection_type(&self, direction: Direction) -> WireConnection {
+        match self.get_type() {
+            ComponentType::Pin => WireConnection::Pin,
+            ComponentType::Flip => {
+                if direction == self.orientation {
+                    WireConnection::Output
+                } else {
+                    WireConnection::Pin
+                }
+            }
+            ComponentType::Flop => {
+                if direction == self.orientation {
+                    WireConnection::Output
+                } else {
+                    WireConnection::SidePin
+                }
+            }
         }
     }
 
@@ -639,12 +679,19 @@ impl Wire {
         wire_direction(self.start, self.end)
     }
 
-    fn update_sprite(&self, rect_renderer: &mut RectRenderer) {
+    fn update_sprite(
+        &self,
+        start_connection: WireConnection,
+        end_connection: WireConnection,
+        rect_renderer: &mut RectRenderer,
+    ) {
         rect_renderer.update(
             &self.instance,
             &rect::Wire {
                 start: self.start,
                 end: self.end,
+                start_connection,
+                end_connection,
                 is_powered: self.power_sources > 0,
             }
             .into(),
