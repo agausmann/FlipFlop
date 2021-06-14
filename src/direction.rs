@@ -1,6 +1,6 @@
 use glam::{mat2, Mat2, Vec2};
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Direction {
     East,
     North,
@@ -70,7 +70,7 @@ impl Direction {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Relative {
     Same,
     Opposite,

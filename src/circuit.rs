@@ -51,7 +51,72 @@ impl Circuit {
         self.tiles.get(&pos)
     }
 
-    pub fn place_wire(&mut self, start: IVec2, end: IVec2) {
+    pub fn can_place_wire(&mut self, start: IVec2, end: IVec2) -> bool {
+        let wire_direction = wire_direction(start, end);
+
+        // All the tiles on the wire's path must allow the wire.
+        for tile_pos in wire_tiles(start, end) {
+            let tile = match self.tile(tile_pos) {
+                Some(x) => x,
+                None => {
+                    // Wires can always be placed on empty tiles.
+                    continue;
+                }
+            };
+            if let Some(component_id) = &tile.component {
+                let component = self.components.get(component_id);
+                match component.get_type() {
+                    ComponentType::Pin => {
+                        // Wires can always be placed across pins.
+                    }
+                    ComponentType::Flip => {
+                        // Wires can be placed across flips if it connects to _either_ the input or
+                        // the output, but not both.
+
+                        // If the flip is not at the start or end of the wire, the wire can be
+                        // placed across the flip if it only connects to the input pin; the output
+                        // pin must not be in the path of the wire.
+                        let illegal_directions = [
+                            component.orientation,
+                            component.orientation.opposite(),
+                        ];
+                        if tile_pos != start
+                            && tile_pos != end
+                            && illegal_directions.contains(&wire_direction)
+                        {
+                            return false;
+                        }
+
+                        // If the flip is at the start or end of the wire, then it is always legal.
+                    }
+                    ComponentType::Flop => {
+                        // Wires can _never_ be placed across flops.
+                        // (The flop must only be at the start or end of the wire).
+                        if tile_pos != start && tile_pos != end {
+                            return false;
+                        }
+
+                        // Wire endpoints can only connect to the input or the output of a flop;
+                        // the other sides are illegal.
+                        let illegal_directions = [
+                            component.orientation.left(),
+                            component.orientation.right(),
+                        ];
+                        if illegal_directions.contains(&wire_direction) {
+                            return false;
+                        }
+                    }
+                }
+            }
+        }
+        true
+    }
+
+    pub fn place_wire(&mut self, start: IVec2, end: IVec2) -> bool {
+        if !self.can_place_wire(start, end) {
+            return false;
+        }
+
         self.place_component(ComponentType::Pin, start, Direction::East);
         self.place_component(ComponentType::Pin, end, Direction::East);
 
@@ -70,6 +135,46 @@ impl Circuit {
             let sub_end = v[1];
             self.insert_wire(sub_start, sub_end);
         }
+        true
+    }
+
+    pub fn can_place_component(
+        &self,
+        ty: ComponentType,
+        position: IVec2,
+        orientation: Direction,
+    ) -> bool {
+        let tile = match self.tile(position) {
+            Some(x) => x,
+            None => {
+                // An empty tile is always legal.
+                return true;
+            }
+        };
+
+        // Components cannot be placed on a tile that already has a component.
+        if tile.component.is_some() {
+            return false;
+        }
+
+        match ty {
+            ComponentType::Pin => {
+                // Pins have no special rules.
+            }
+            ComponentType::Flip => {
+                // Flips can be placed if there is no wire on the output side.
+                if tile.wires.get(orientation).is_some() {
+                    return false;
+                }
+            }
+            ComponentType::Flop => {
+                // Flops cannot be placed on any location that has a wire.
+                if tile.wires.count() != 0 {
+                    return false;
+                }
+            }
+        }
+        true
     }
 
     pub fn place_component(
@@ -77,15 +182,15 @@ impl Circuit {
         ty: ComponentType,
         position: IVec2,
         orientation: Direction,
-    ) {
-        let tile = self.tiles.entry(position).or_default();
-        if tile.component.is_some() {
-            return;
+    ) -> bool {
+        if !self.can_place_component(ty, position, orientation) {
+            return false;
         }
+
+        let tile = self.tiles.entry(position).or_default();
 
         // Logically split wires that pass over this tile,
         // so they connect through the pin.
-        // TODO adapt this logic for the placement rules of other components.
         let wires = tile.wires.clone();
         if let Some(wire_id) = wires.north {
             if wires.north == wires.south {
@@ -102,28 +207,35 @@ impl Circuit {
             }
         }
 
-        self.insert_component(ty, position, orientation);
+        &self.insert_component(ty, position, orientation);
+        true
     }
 
     pub fn delete_component(&mut self, position: IVec2) {
         if let Some(tile) = self.tiles.get(&position).cloned() {
-            if let Some(component_id) = tile.component {
-                self.remove_component(component_id);
-            }
+            let component = match tile.component {
+                Some(id) => self.remove_component(id),
+                None => return,
+            };
 
-            // Merge opposite wires into a single one passing over this tile.
-            // TODO adapt this logic for the placement rules of other components.
-            let wires = tile.wires.clone();
-            let north = wires.north.map(|id| self.remove_wire(id));
-            let east = wires.east.map(|id| self.remove_wire(id));
-            let south = wires.south.map(|id| self.remove_wire(id));
-            let west = wires.west.map(|id| self.remove_wire(id));
+            let north = tile.wires.north.map(|id| self.remove_wire(id));
+            let east = tile.wires.east.map(|id| self.remove_wire(id));
+            let south = tile.wires.south.map(|id| self.remove_wire(id));
+            let west = tile.wires.west.map(|id| self.remove_wire(id));
 
-            if let (Some(north), Some(south)) = (north, south) {
-                self.insert_wire(south.start, north.end);
-            }
-            if let (Some(east), Some(west)) = (east, west) {
-                self.insert_wire(west.start, east.end);
+            match component.get_type() {
+                ComponentType::Pin => {
+                    // Convert pin to crossover; merge opposite wires.
+
+                    if let (Some(north), Some(south)) = (north, south) {
+                        self.insert_wire(south.start, north.end);
+                    }
+                    if let (Some(east), Some(west)) = (east, west) {
+                        self.insert_wire(west.start, east.end);
+                    }
+                }
+                ComponentType::Flip => {}
+                ComponentType::Flop => {}
             }
         }
     }
@@ -384,6 +496,7 @@ impl TileWires {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ComponentType {
     Pin,
     Flip,
@@ -397,6 +510,14 @@ struct Component {
 }
 
 impl Component {
+    fn get_type(&self) -> ComponentType {
+        match &self.data {
+            ComponentData::Pin(..) => ComponentType::Pin,
+            ComponentData::Flip(..) => ComponentType::Flip,
+            ComponentData::Flop(..) => ComponentType::Flop,
+        }
+    }
+
     fn update_sprite(&self, rect_renderer: &mut RectRenderer) {
         match &self.data {
             ComponentData::Pin(state, sprite) => {
@@ -515,11 +636,7 @@ impl Wire {
     }
 
     fn direction(&self) -> Direction {
-        if self.start.x == self.end.x {
-            Direction::North
-        } else {
-            Direction::East
-        }
+        wire_direction(self.start, self.end)
     }
 
     fn update_sprite(&self, rect_renderer: &mut RectRenderer) {
@@ -532,6 +649,22 @@ impl Wire {
             }
             .into(),
         );
+    }
+}
+
+fn wire_direction(start: IVec2, end: IVec2) -> Direction {
+    if start.x == end.x {
+        if start.y < end.y {
+            Direction::North
+        } else {
+            Direction::South
+        }
+    } else {
+        if start.x < end.x {
+            Direction::East
+        } else {
+            Direction::West
+        }
     }
 }
 
