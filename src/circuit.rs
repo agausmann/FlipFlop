@@ -168,39 +168,35 @@ impl Circuit {
         let data = match ty {
             ComponentType::Pin => {
                 let power_sources = 0; //TODO detect
-                let state = Pin { power_sources };
-                let sprite = self.rect_renderer.insert(&Default::default());
+                let state = PinState { power_sources };
+                let sprite = PinSprite {
+                    pin: self.rect_renderer.insert(&Default::default()),
+                };
                 ComponentData::Pin(state, sprite)
             }
             ComponentType::Flip => {
                 let power_sources = 0; //TODO detect
-                let state = Flip {
+                let state = FlipState {
                     power_sources,
                     output_powered: power_sources == 0,
                 };
-                let body = self.rect_renderer.insert(&Default::default());
-                let input = self.rect_renderer.insert(&Default::default());
-                let output = self.rect_renderer.insert(&Default::default());
                 let sprite = FlipSprite {
-                    body,
-                    input,
-                    output,
+                    body: self.rect_renderer.insert(&Default::default()),
+                    input: self.rect_renderer.insert(&Default::default()),
+                    output: self.rect_renderer.insert(&Default::default()),
                 };
                 ComponentData::Flip(state, sprite)
             }
             ComponentType::Flop => {
                 let power_sources = 0; //TODO detect
-                let state = Flop {
+                let state = FlopState {
                     power_sources,
                     output_powered: power_sources > 0,
                 };
-                let body = self.rect_renderer.insert(&Default::default());
-                let input = self.rect_renderer.insert(&Default::default());
-                let output = self.rect_renderer.insert(&Default::default());
                 let sprite = FlopSprite {
-                    body,
-                    input,
-                    output,
+                    body: self.rect_renderer.insert(&Default::default()),
+                    input: self.rect_renderer.insert(&Default::default()),
+                    output: self.rect_renderer.insert(&Default::default()),
                 };
                 ComponentData::Flop(state, sprite)
             }
@@ -272,8 +268,8 @@ impl Circuit {
         tile.component = None;
         tile.update_crossover(component.position, &mut self.rect_renderer);
         match &component.data {
-            ComponentData::Pin(_, instance) => {
-                self.rect_renderer.remove(instance);
+            ComponentData::Pin(_, sprite) => {
+                self.rect_renderer.remove(&sprite.pin);
             }
             ComponentData::Flip(_, sprite) => {
                 self.rect_renderer.remove(&sprite.body);
@@ -405,7 +401,7 @@ impl Component {
         match &self.data {
             ComponentData::Pin(state, sprite) => {
                 rect_renderer.update(
-                    sprite,
+                    &sprite.pin,
                     &rect::Pin {
                         position: self.position,
                         is_powered: state.power_sources > 0,
@@ -471,16 +467,20 @@ impl Component {
 }
 
 enum ComponentData {
-    Pin(Pin, rect::Handle),
-    Flip(Flip, FlipSprite),
-    Flop(Flop, FlopSprite),
+    Pin(PinState, PinSprite),
+    Flip(FlipState, FlipSprite),
+    Flop(FlopState, FlopSprite),
 }
 
-struct Pin {
+struct PinState {
     power_sources: u32,
 }
 
-struct Flip {
+struct PinSprite {
+    pin: rect::Handle,
+}
+
+struct FlipState {
     power_sources: u32,
     output_powered: bool,
 }
@@ -491,7 +491,7 @@ struct FlipSprite {
     output: rect::Handle,
 }
 
-struct Flop {
+struct FlopState {
     power_sources: u32,
     output_powered: bool,
 }
