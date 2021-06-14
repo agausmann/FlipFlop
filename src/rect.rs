@@ -277,7 +277,7 @@ pub struct Rect {
 
 const WIRE_RADIUS: f32 = 1.0 / 16.0;
 const PIN_RADIUS: f32 = 2.0 / 16.0;
-const CROSSOVER_RADIUS: f32 = 4.0 / 16.0;
+const CROSSOVER_RADIUS: f32 = 3.0 / 16.0;
 const BODY_RADIUS: f32 = 4.0 / 16.0;
 const OUTPUT_RADIUS: f32 = 2.0 / 16.0;
 const OUTPUT_HEIGHT: f32 = 2.0 / 16.0;
