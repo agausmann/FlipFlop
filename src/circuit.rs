@@ -56,7 +56,7 @@ impl Circuit {
         self.place_component(ComponentType::Pin, end, Direction::East);
 
         // Split the wire at every tile where a component is present.
-        let split_points: Vec<IVec2> = tiles(start, end)
+        let split_points: Vec<IVec2> = wire_tiles(start, end)
             .filter(|pos| {
                 self.tiles
                     .get(&pos)
@@ -511,7 +511,7 @@ struct Wire {
 
 impl Wire {
     fn tiles(&self) -> impl Iterator<Item = IVec2> {
-        tiles(self.start, self.end)
+        wire_tiles(self.start, self.end)
     }
 
     fn direction(&self) -> Direction {
@@ -535,7 +535,7 @@ impl Wire {
     }
 }
 
-fn tiles(start: IVec2, end: IVec2) -> impl Iterator<Item = IVec2> {
+fn wire_tiles(start: IVec2, end: IVec2) -> impl Iterator<Item = IVec2> {
     let delta = end - start;
     // Either X or Y is zero, so the "normalized" vector is clamping the
     // non-zero element, and length is the nonzero element + 0.
