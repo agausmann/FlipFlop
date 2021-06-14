@@ -244,14 +244,7 @@ impl Circuit {
         }
 
         let power_sources = 0; //TODO detect
-        let instance = self.rect_renderer.insert(
-            &rect::Wire {
-                start,
-                end,
-                is_powered: power_sources > 0,
-            }
-            .into(),
-        );
+        let instance = self.rect_renderer.insert(&Default::default());
         let id = self.wires.insert(Wire {
             start,
             end,
@@ -259,6 +252,7 @@ impl Circuit {
             power_sources,
         });
         let wire = self.wires.get(&id);
+        wire.update_sprite(&mut self.rect_renderer);
         for pos in wire.tiles() {
             let tile = self.tiles.entry(pos).or_default();
             if pos != wire.start {
@@ -526,6 +520,18 @@ impl Wire {
         } else {
             Direction::East
         }
+    }
+
+    fn update_sprite(&self, rect_renderer: &mut RectRenderer) {
+        rect_renderer.update(
+            &self.instance,
+            &rect::Wire {
+                start: self.start,
+                end: self.end,
+                is_powered: self.power_sources > 0,
+            }
+            .into(),
+        );
     }
 }
 
