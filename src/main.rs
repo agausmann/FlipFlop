@@ -427,6 +427,8 @@ impl State {
 }
 
 fn main() -> anyhow::Result<()> {
+    env_logger::init();
+
     // The window decorations provided by winit when using wayland do not match the native system
     // theme, so fallback to X11 via XWayland if possible.
     std::env::set_var("WINIT_UNIX_BACKEND", "x11");
