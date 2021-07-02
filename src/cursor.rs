@@ -52,7 +52,7 @@ impl CursorManager {
                     start_pin,
                     &rect::Pin {
                         position: *start_position,
-                        is_powered: false,
+                        color: Default::default(),
                     }
                     .into(),
                 );
@@ -60,7 +60,7 @@ impl CursorManager {
                     end_pin,
                     &rect::Pin {
                         position: *end_position,
-                        is_powered: false,
+                        color: Default::default(),
                     }
                     .into(),
                 );
@@ -71,7 +71,7 @@ impl CursorManager {
                         end: *end_position,
                         start_connection: Default::default(),
                         end_connection: Default::default(),
-                        is_powered: false,
+                        color: Default::default(),
                     }
                     .into(),
                 );
@@ -101,14 +101,14 @@ impl CursorManager {
         let start_pin = self.rect_renderer.insert(
             &rect::Pin {
                 position: start_position,
-                is_powered: false,
+                color: Default::default(),
             }
             .into(),
         );
         let end_pin = self.rect_renderer.insert(
             &rect::Pin {
                 position: start_position,
-                is_powered: false,
+                color: Default::default(),
             }
             .into(),
         );
@@ -118,7 +118,7 @@ impl CursorManager {
                 end: start_position,
                 start_connection: Default::default(),
                 end_connection: Default::default(),
-                is_powered: false,
+                color: Default::default(),
             }
             .into(),
         );

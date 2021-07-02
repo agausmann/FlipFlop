@@ -1,7 +1,7 @@
 use crate::board::{self, BoardRenderer};
 use crate::depot::{self, Depot};
 use crate::direction::Direction;
-use crate::rect::{self, RectRenderer, WireConnection};
+use crate::rect::{self, RectRenderer, WireConnection, Color};
 use crate::viewport::Viewport;
 use crate::GraphicsContext;
 use glam::IVec2;
@@ -279,18 +279,18 @@ impl Circuit {
         }
         let data = match ty {
             ComponentType::Pin => {
-                let power_sources = 0; //TODO detect
-                let state = PinState { power_sources };
+                let state = PinState {
+                    cluster_index: 0, //TODO
+                };
                 let sprite = PinSprite {
                     pin: self.rect_renderer.insert(&Default::default()),
                 };
                 ComponentData::Pin(state, sprite)
             }
             ComponentType::Flip => {
-                let power_sources = 0; //TODO detect
                 let state = FlipState {
-                    power_sources,
-                    output_powered: power_sources == 0,
+                    input_cluster_index: 0, //TODO
+                    output_cluster_index: 0, //TODO
                 };
                 let sprite = FlipSprite {
                     body: self.rect_renderer.insert(&Default::default()),
@@ -300,10 +300,9 @@ impl Circuit {
                 ComponentData::Flip(state, sprite)
             }
             ComponentType::Flop => {
-                let power_sources = 0; //TODO detect
                 let state = FlopState {
-                    power_sources,
-                    output_powered: power_sources > 0,
+                    input_cluster_index: 0, //TODO
+                    output_cluster_index: 0, //TODO
                 };
                 let sprite = FlopSprite {
                     body: self.rect_renderer.insert(&Default::default()),
@@ -351,13 +350,12 @@ impl Circuit {
             }
         }
 
-        let power_sources = 0; //TODO detect
         let instance = self.rect_renderer.insert(&Default::default());
         let id = self.wires.insert(Wire {
             start,
             end,
             instance,
-            power_sources,
+            cluster_index: 0, //TODO
         });
         let wire = self.wires.get(&id);
         let start_connection = self
@@ -565,7 +563,7 @@ impl Component {
                     &sprite.pin,
                     &rect::Pin {
                         position: self.position,
-                        is_powered: state.power_sources > 0,
+                        color: Color::Wire(state.cluster_index),
                     }
                     .into(),
                 );
@@ -582,7 +580,7 @@ impl Component {
                     &sprite.input,
                     &rect::Pin {
                         position: self.position,
-                        is_powered: state.power_sources > 0,
+                        color: Color::Wire(state.input_cluster_index),
                     }
                     .into(),
                 );
@@ -591,7 +589,7 @@ impl Component {
                     &rect::Output {
                         position: self.position,
                         orientation: self.orientation,
-                        is_powered: state.output_powered,
+                        color: Color::Wire(state.output_cluster_index),
                     }
                     .into(),
                 );
@@ -609,7 +607,7 @@ impl Component {
                     &rect::SidePin {
                         position: self.position,
                         orientation: self.orientation.opposite(),
-                        is_powered: state.power_sources > 0,
+                        color: Color::Wire(state.input_cluster_index),
                     }
                     .into(),
                 );
@@ -618,7 +616,7 @@ impl Component {
                     &rect::Output {
                         position: self.position,
                         orientation: self.orientation,
-                        is_powered: state.output_powered,
+                        color: Color::Wire(state.output_cluster_index),
                     }
                     .into(),
                 );
@@ -634,7 +632,7 @@ enum ComponentData {
 }
 
 struct PinState {
-    power_sources: u32,
+    cluster_index: u32,
 }
 
 struct PinSprite {
@@ -642,8 +640,8 @@ struct PinSprite {
 }
 
 struct FlipState {
-    power_sources: u32,
-    output_powered: bool,
+    input_cluster_index: u32,
+    output_cluster_index: u32,
 }
 
 struct FlipSprite {
@@ -653,8 +651,8 @@ struct FlipSprite {
 }
 
 struct FlopState {
-    power_sources: u32,
-    output_powered: bool,
+    input_cluster_index: u32,
+    output_cluster_index: u32,
 }
 
 struct FlopSprite {
@@ -666,7 +664,7 @@ struct FlopSprite {
 struct Wire {
     start: IVec2,
     end: IVec2,
-    power_sources: u32,
+    cluster_index: u32,
     instance: rect::Handle,
 }
 
@@ -692,7 +690,7 @@ impl Wire {
                 end: self.end,
                 start_connection,
                 end_connection,
-                is_powered: self.power_sources > 0,
+                color: Color::Wire(self.cluster_index),
             }
             .into(),
         );

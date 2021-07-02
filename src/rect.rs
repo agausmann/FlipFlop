@@ -39,15 +39,17 @@ struct Instance {
     z_index: f32,
     size: [f32; 2],
     color: [f32; 4],
+    cluster_index: u32,
 }
 
-static INSTANCE_ATTRIBUTES: Lazy<[wgpu::VertexAttribute; 4]> =
+static INSTANCE_ATTRIBUTES: Lazy<[wgpu::VertexAttribute; 5]> =
     Lazy::new(|| {
         wgpu::vertex_attr_array![
             1 => Float32x2,
             2 => Float32,
             3 => Float32x2,
             4 => Float32x4,
+            5 => Uint32,
         ]
     });
 
@@ -65,7 +67,8 @@ impl Instance {
             position: rect.position.into(),
             z_index: rect.z_index as f32 / u8::MAX as f32,
             size: rect.size.into(),
-            color: rect.color.into(),
+            color: rect.color.color().into(),
+            cluster_index: rect.color.cluster_index(),
         }
     }
 }
@@ -272,7 +275,35 @@ pub struct Rect {
     pub position: Vec2,
     pub z_index: u8,
     pub size: Vec2,
-    pub color: Vec4,
+    pub color: Color,
+}
+
+#[derive(Clone, Copy)]
+pub enum Color {
+    Fixed(Vec4),
+    Wire(u32),
+}
+
+impl Default for Color {
+    fn default() -> Self {
+        Self::Fixed(Vec4::ZERO)
+    }
+}
+
+impl Color {
+    fn color(&self) -> Vec4 {
+        match self {
+            &Self::Fixed(color) => color,
+            _ => Vec4::ZERO,
+        }
+    }
+
+    fn cluster_index(&self) -> u32 {
+        match self {
+            &Self::Wire(index) => index,
+            _ => 0,
+        }
+    }
 }
 
 const WIRE_RADIUS: f32 = 1.0 / 16.0;
@@ -320,7 +351,7 @@ pub struct Wire {
     pub end: IVec2,
     pub start_connection: WireConnection,
     pub end_connection: WireConnection,
-    pub is_powered: bool,
+    pub color: Color,
 }
 
 impl From<Wire> for Rect {
@@ -352,7 +383,7 @@ impl From<Wire> for Rect {
             z_index,
             size: abs_size.as_f32() + Vec2::splat(2.0 * WIRE_RADIUS)
                 - Vec2::splat(start_conn.offset() + end_conn.offset()) * axis,
-            color: wire_color(wire.is_powered),
+            color: wire.color,
         }
     }
 }
@@ -367,14 +398,14 @@ impl From<Body> for Rect {
             position: body.position.as_f32() + Vec2::splat(0.5 - BODY_RADIUS),
             z_index: BODY_Z_INDEX,
             size: Vec2::splat(2.0 * BODY_RADIUS),
-            color: Vec4::new(1.0, 1.0, 1.0, 1.0),
+            color: Color::Fixed(Vec4::new(1.0, 1.0, 1.0, 1.0)),
         }
     }
 }
 
 pub struct Pin {
     pub position: IVec2,
-    pub is_powered: bool,
+    pub color: Color,
 }
 
 impl From<Pin> for Rect {
@@ -383,7 +414,7 @@ impl From<Pin> for Rect {
             position: pin.position.as_f32() + Vec2::splat(0.5 - PIN_RADIUS),
             z_index: PIN_Z_INDEX,
             size: Vec2::splat(2.0 * PIN_RADIUS),
-            color: wire_color(pin.is_powered),
+            color: pin.color,
         }
     }
 }
@@ -391,7 +422,7 @@ impl From<Pin> for Rect {
 pub struct SidePin {
     pub position: IVec2,
     pub orientation: Direction,
-    pub is_powered: bool,
+    pub color: Color,
 }
 
 impl From<SidePin> for Rect {
@@ -404,7 +435,7 @@ impl From<SidePin> for Rect {
                 + transform * Vec2::new(SIDE_PIN_DISTANCE, -PIN_RADIUS),
             size: transform * Vec2::new(SIDE_PIN_HEIGHT, 2.0 * PIN_RADIUS),
             z_index: SIDE_PIN_Z_INDEX,
-            color: wire_color(pin.is_powered),
+            color: pin.color,
         }
     }
 }
@@ -412,7 +443,7 @@ impl From<SidePin> for Rect {
 pub struct Output {
     pub position: IVec2,
     pub orientation: Direction,
-    pub is_powered: bool,
+    pub color: Color,
 }
 
 impl From<Output> for Rect {
@@ -425,7 +456,7 @@ impl From<Output> for Rect {
                 + transform * Vec2::new(BODY_RADIUS, -OUTPUT_RADIUS),
             size: transform * Vec2::new(OUTPUT_HEIGHT, 2.0 * OUTPUT_RADIUS),
             z_index: OUTPUT_Z_INDEX,
-            color: wire_color(output.is_powered),
+            color: output.color,
         }
     }
 }
@@ -441,15 +472,7 @@ impl From<Crossover> for Rect {
                 + Vec2::splat(0.5 - CROSSOVER_RADIUS),
             z_index: CROSSOVER_Z_INDEX,
             size: Vec2::splat(2.0 * CROSSOVER_RADIUS),
-            color: Vec4::new(0.5, 0.5, 0.5, 1.0),
+            color: Color::Fixed(Vec4::new(0.5, 0.5, 0.5, 1.0)),
         }
-    }
-}
-
-fn wire_color(is_powered: bool) -> Vec4 {
-    if is_powered {
-        Vec4::new(0.8, 0.0, 0.0, 1.0)
-    } else {
-        Vec4::new(0.0, 0.0, 0.0, 1.0)
     }
 }
