@@ -1,7 +1,7 @@
 use crate::board::{self, BoardRenderer};
 use crate::depot::{self, Depot};
 use crate::direction::Direction;
-use crate::rect::{self, RectRenderer, WireConnection, Color};
+use crate::rect::{self, Color, RectRenderer, WireConnection};
 use crate::viewport::Viewport;
 use crate::GraphicsContext;
 use glam::IVec2;
@@ -289,7 +289,7 @@ impl Circuit {
             }
             ComponentType::Flip => {
                 let state = FlipState {
-                    input_cluster_index: 0, //TODO
+                    input_cluster_index: 0,  //TODO
                     output_cluster_index: 0, //TODO
                 };
                 let sprite = FlipSprite {
@@ -301,7 +301,7 @@ impl Circuit {
             }
             ComponentType::Flop => {
                 let state = FlopState {
-                    input_cluster_index: 0, //TODO
+                    input_cluster_index: 0,  //TODO
                     output_cluster_index: 0, //TODO
                 };
                 let sprite = FlopSprite {
