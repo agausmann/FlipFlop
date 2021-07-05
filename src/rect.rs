@@ -94,6 +94,7 @@ pub struct RectRenderer {
     render_pipeline: wgpu::RenderPipeline,
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
+    cluster_state_buffer: wgpu::Buffer,
     bind_group: wgpu::BindGroup,
     instances: InstanceManager<Instance>,
 }
@@ -103,7 +104,18 @@ impl RectRenderer {
         let bind_group_layout = gfx.device.create_bind_group_layout(
             &wgpu::BindGroupLayoutDescriptor {
                 label: Some("RectRenderer.bind_group_layout"),
-                entries: &[],
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStage::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage {
+                            read_only: true,
+                        },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
             },
         );
 
@@ -186,12 +198,22 @@ impl RectRenderer {
                     contents: bytemuck::cast_slice(INDICES),
                     usage: wgpu::BufferUsage::INDEX,
                 });
+        let cluster_state_buffer =
+            gfx.device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("RectRenderer.cluster_state_buffer"),
+                    contents: bytemuck::bytes_of(&[0x00_u32]),
+                    usage: wgpu::BufferUsage::STORAGE,
+                });
 
         let bind_group =
             gfx.device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("RectRenderer.bind_group"),
                 layout: &bind_group_layout,
-                entries: &[],
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: cluster_state_buffer.as_entire_binding(),
+                }],
             });
 
         let instances = InstanceManager::new(gfx);
@@ -200,6 +222,7 @@ impl RectRenderer {
             render_pipeline,
             vertex_buffer,
             index_buffer,
+            cluster_state_buffer,
             bind_group,
             instances,
         }
@@ -301,7 +324,7 @@ impl Color {
     fn cluster_index(&self) -> u32 {
         match self {
             &Self::Wire(index) => index,
-            _ => 0,
+            _ => 0xffffffff,
         }
     }
 }
