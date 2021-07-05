@@ -24,12 +24,19 @@ void main() {
 
     if (i_cluster_index == 0xffffffff) {
         v_color = i_rect_color;
-    } else if ((u_cluster_states[i_cluster_index >> 5] & (1 << (i_cluster_index & 0x1f))) != 0) {
-        // wire on
-        v_color = vec4(1.0, 0.0, 0.0, 1.0);
     } else {
-        // wire off
-        v_color = vec4(0.0, 0.0, 0.0, 1.0);
+        uint array_index = i_cluster_index >> 6;
+        uint bit_index = (i_cluster_index >> 1) & 0x1f;
+        bool is_on = (u_cluster_states[array_index] & (1 << bit_index)) != 0;
+        bool invert = (i_cluster_index & 1) != 0;
+
+        if (is_on != invert) {
+            // wire on
+            v_color = vec4(1.0, 0.0, 0.0, 1.0);
+        } else {
+            // wire off
+            v_color = vec4(0.0, 0.0, 0.0, 1.0);
+        }
     }
 }
 

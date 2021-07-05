@@ -290,7 +290,7 @@ impl Circuit {
             ComponentType::Flip => {
                 let state = FlipState {
                     input_cluster_index: 0,  //TODO
-                    output_cluster_index: 0, //TODO
+                    output_cluster_index: 1, //TODO
                 };
                 let sprite = FlipSprite {
                     body: self.rect_renderer.insert(&Default::default()),
