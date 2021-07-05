@@ -6,6 +6,7 @@ pub mod depot;
 pub mod direction;
 pub mod instance;
 pub mod rect;
+pub mod simulation;
 pub mod viewport;
 
 use crate::circuit::Circuit;

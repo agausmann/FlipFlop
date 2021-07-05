@@ -2,6 +2,7 @@ use crate::board::{self, BoardRenderer};
 use crate::depot::{self, Depot};
 use crate::direction::Direction;
 use crate::rect::{self, Color, RectRenderer, WireConnection};
+use crate::simulation::Simulation;
 use crate::viewport::Viewport;
 use crate::GraphicsContext;
 use glam::IVec2;
@@ -13,6 +14,7 @@ pub struct Circuit {
     tiles: HashMap<IVec2, Tile>,
     components: Depot<Component>,
     wires: Depot<Wire>,
+    simulation: Simulation,
 }
 
 impl Circuit {
@@ -31,6 +33,7 @@ impl Circuit {
             tiles: HashMap::new(),
             components: Depot::new(),
             wires: Depot::new(),
+            simulation: Simulation::new(),
         }
     }
 
