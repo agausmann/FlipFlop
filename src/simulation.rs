@@ -5,7 +5,7 @@ pub struct Simulation {
     num_clusters: usize,
     free_clusters: Vec<usize>,
 
-    powered: Vec<bool>,
+    is_powered: Vec<bool>,
     was_powered: Vec<bool>,
 
     // Flip connections are multi-sets, because there's nothing stopping
@@ -22,7 +22,7 @@ impl Simulation {
         Self {
             num_clusters: 0,
             free_clusters: Vec::new(),
-            powered: Vec::new(),
+            is_powered: Vec::new(),
             was_powered: Vec::new(),
             flips: Vec::new(),
             flops: Vec::new(),
@@ -38,7 +38,7 @@ impl Simulation {
             let id = self.num_clusters;
             self.num_clusters += 1;
 
-            self.powered.push(false);
+            self.is_powered.push(false);
             self.was_powered.push(false);
             self.flips.push(HashMap::new());
             self.flops.push(HashMap::new());
@@ -89,14 +89,14 @@ impl Simulation {
     }
 
     pub fn is_powered(&mut self, id: usize) -> bool {
-        self.powered[id]
+        self.is_powered[id]
     }
 
     pub fn tick(&mut self) {
-        std::mem::swap(&mut self.powered, &mut self.was_powered);
+        std::mem::swap(&mut self.is_powered, &mut self.was_powered);
 
         for i in 0..self.num_clusters {
-            self.powered[i] = self.manual_power[i] > 0
+            self.is_powered[i] = self.manual_power[i] > 0
                 || self.flips[i].iter().any(|(&id, _)| !self.was_powered[id])
                 || self.flops[i].iter().any(|(&id, _)| self.was_powered[id]);
         }
