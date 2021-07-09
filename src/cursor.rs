@@ -1,3 +1,5 @@
+use crate::circuit::ComponentType;
+use crate::direction::Direction;
 use crate::rect::{self, RectRenderer};
 use crate::viewport::Viewport;
 use crate::GraphicsContext;
@@ -6,6 +8,8 @@ use glam::{IVec2, Vec2};
 pub struct CursorManager {
     rect_renderer: RectRenderer,
     current_state: CursorState,
+    place_type: ComponentType,
+    place_orientation: Direction,
 }
 
 impl CursorManager {
@@ -13,6 +17,8 @@ impl CursorManager {
         Self {
             rect_renderer: RectRenderer::new(gfx, viewport),
             current_state: CursorState::Normal,
+            place_type: ComponentType::Pin,
+            place_orientation: Direction::North,
         }
     }
 
@@ -96,7 +102,7 @@ impl CursorManager {
         });
     }
 
-    pub fn start_place(&mut self, viewport: &Viewport) {
+    pub fn start_place_wire(&mut self, viewport: &Viewport) {
         let start_position = viewport.cursor().tile();
         let start_pin = self.rect_renderer.insert(
             &rect::Pin {
@@ -133,6 +139,22 @@ impl CursorManager {
 
     pub fn end(&mut self) {
         self.replace(CursorState::Normal);
+    }
+
+    pub fn place_type(&self) -> ComponentType {
+        self.place_type
+    }
+
+    pub fn place_orientation(&self) -> Direction {
+        self.place_orientation
+    }
+
+    pub fn set_place_type(&mut self, ty: ComponentType) {
+        self.place_type = ty;
+    }
+
+    pub fn set_place_orientation(&mut self, direction: Direction) {
+        self.place_orientation = direction;
     }
 
     fn replace(&mut self, new_state: CursorState) {

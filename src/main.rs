@@ -206,7 +206,19 @@ impl State {
                         }
                     }
                     (MouseButton::Left, ElementState::Pressed) => {
-                        self.cursor_manager.start_place(&self.viewport);
+                        match self.cursor_manager.place_type() {
+                            ComponentType::Pin => {
+                                self.cursor_manager
+                                    .start_place_wire(&self.viewport);
+                            }
+                            other_type => {
+                                self.circuit.place_component(
+                                    other_type,
+                                    self.viewport.cursor().tile(),
+                                    self.cursor_manager.place_orientation(),
+                                );
+                            }
+                        }
                     }
                     (MouseButton::Left, ElementState::Released) => {
                         match self.cursor_manager.current_state() {
@@ -278,16 +290,16 @@ impl State {
                     };
 
                     match keycode {
-                        VirtualKeyCode::Up => {
+                        VirtualKeyCode::Up | VirtualKeyCode::W => {
                             self.viewport.camera_mut().pan_up = pressed;
                         }
-                        VirtualKeyCode::Down => {
+                        VirtualKeyCode::Down | VirtualKeyCode::S => {
                             self.viewport.camera_mut().pan_down = pressed;
                         }
-                        VirtualKeyCode::Left => {
+                        VirtualKeyCode::Left | VirtualKeyCode::A => {
                             self.viewport.camera_mut().pan_left = pressed;
                         }
-                        VirtualKeyCode::Right => {
+                        VirtualKeyCode::Right | VirtualKeyCode::D => {
                             self.viewport.camera_mut().pan_right = pressed;
                         }
                         VirtualKeyCode::PageUp => {
@@ -295,6 +307,23 @@ impl State {
                         }
                         VirtualKeyCode::PageDown => {
                             self.viewport.camera_mut().zoom_out = pressed;
+                        }
+                        VirtualKeyCode::Key1 if pressed => {
+                            self.cursor_manager
+                                .set_place_type(ComponentType::Pin);
+                        }
+                        VirtualKeyCode::Key2 if pressed => {
+                            self.cursor_manager
+                                .set_place_type(ComponentType::Flip);
+                        }
+                        VirtualKeyCode::Key3 if pressed => {
+                            self.cursor_manager
+                                .set_place_type(ComponentType::Flop);
+                        }
+                        VirtualKeyCode::R if pressed => {
+                            self.cursor_manager.set_place_orientation(
+                                self.cursor_manager.place_orientation().right(),
+                            );
                         }
                         _ => {}
                     }
