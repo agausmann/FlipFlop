@@ -12,7 +12,7 @@ pub mod viewport;
 use crate::circuit::Circuit;
 use crate::circuit::ComponentType;
 use crate::counter::Counter;
-use crate::cursor::{CursorManager, CursorMode};
+use crate::cursor::{CursorManager, CursorState};
 use crate::direction::Direction;
 use crate::viewport::Viewport;
 use anyhow::Context;
@@ -195,8 +195,8 @@ impl State {
                         self.gfx.window.set_cursor_icon(CursorIcon::Grabbing);
                     }
                     (MouseButton::Middle, ElementState::Released) => {
-                        match self.cursor_manager.current_mode() {
-                            CursorMode::Pan { .. } => {
+                        match self.cursor_manager.current_state() {
+                            CursorState::Pan { .. } => {
                                 self.cursor_manager.end();
                                 self.gfx
                                     .window
@@ -209,8 +209,8 @@ impl State {
                         self.cursor_manager.start_place(&self.viewport);
                     }
                     (MouseButton::Left, ElementState::Released) => {
-                        match self.cursor_manager.current_mode() {
-                            &CursorMode::Place {
+                        match self.cursor_manager.current_state() {
+                            &CursorState::PlaceWire {
                                 start_position,
                                 end_position,
                                 ..
@@ -243,8 +243,8 @@ impl State {
                         }
                     }
                     (MouseButton::Right, ElementState::Pressed) => {
-                        match &self.cursor_manager.current_mode() {
-                            &CursorMode::Normal => {
+                        match &self.cursor_manager.current_state() {
+                            &CursorState::Normal => {
                                 let position = self.viewport.cursor().tile();
                                 self.circuit.delete_all_at(position);
                             }
@@ -256,9 +256,9 @@ impl State {
             }
             WindowEvent::MouseWheel { delta, .. } => match &self
                 .cursor_manager
-                .current_mode()
+                .current_state()
             {
-                CursorMode::Normal => {
+                CursorState::Normal => {
                     let delta = match delta {
                         MouseScrollDelta::LineDelta(_x, y) => y,
                         MouseScrollDelta::PixelDelta(position) => {

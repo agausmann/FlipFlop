@@ -5,25 +5,25 @@ use glam::{IVec2, Vec2};
 
 pub struct CursorManager {
     rect_renderer: RectRenderer,
-    current_mode: CursorMode,
+    current_state: CursorState,
 }
 
 impl CursorManager {
     pub fn new(gfx: &GraphicsContext, viewport: &Viewport) -> Self {
         Self {
             rect_renderer: RectRenderer::new(gfx, viewport),
-            current_mode: CursorMode::Normal,
+            current_state: CursorState::Normal,
         }
     }
 
-    pub fn current_mode(&self) -> &CursorMode {
-        &self.current_mode
+    pub fn current_state(&self) -> &CursorState {
+        &self.current_state
     }
 
     pub fn update(&mut self, viewport: &mut Viewport) {
-        match &mut self.current_mode {
-            CursorMode::Normal => {}
-            CursorMode::Pan { last_position } => {
+        match &mut self.current_state {
+            CursorState::Normal => {}
+            CursorState::Pan { last_position } => {
                 let position = viewport.cursor().screen_position;
                 let delta = (position - *last_position) * Vec2::new(1.0, -1.0);
                 let camera = viewport.camera_mut();
@@ -31,7 +31,7 @@ impl CursorManager {
 
                 *last_position = position;
             }
-            CursorMode::Place {
+            CursorState::PlaceWire {
                 start_position,
                 end_position,
                 start_pin,
@@ -91,7 +91,7 @@ impl CursorManager {
     }
 
     pub fn start_pan(&mut self, viewport: &Viewport) {
-        self.replace(CursorMode::Pan {
+        self.replace(CursorState::Pan {
             last_position: viewport.cursor().screen_position,
         });
     }
@@ -122,7 +122,7 @@ impl CursorManager {
             }
             .into(),
         );
-        self.replace(CursorMode::Place {
+        self.replace(CursorState::PlaceWire {
             start_position,
             end_position: start_position,
             start_pin,
@@ -132,14 +132,14 @@ impl CursorManager {
     }
 
     pub fn end(&mut self) {
-        self.replace(CursorMode::Normal);
+        self.replace(CursorState::Normal);
     }
 
-    fn replace(&mut self, new_mode: CursorMode) {
-        match &self.current_mode {
-            CursorMode::Normal => {}
-            CursorMode::Pan { .. } => {}
-            CursorMode::Place {
+    fn replace(&mut self, new_state: CursorState) {
+        match &self.current_state {
+            CursorState::Normal => {}
+            CursorState::Pan { .. } => {}
+            CursorState::PlaceWire {
                 start_pin,
                 end_pin,
                 wire,
@@ -150,16 +150,16 @@ impl CursorManager {
                 self.rect_renderer.remove(wire);
             }
         }
-        self.current_mode = new_mode;
+        self.current_state = new_state;
     }
 }
 
-pub enum CursorMode {
+pub enum CursorState {
     Normal,
     Pan {
         last_position: Vec2,
     },
-    Place {
+    PlaceWire {
         start_position: IVec2,
         end_position: IVec2,
         start_pin: rect::Handle,
