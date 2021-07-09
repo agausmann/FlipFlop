@@ -228,11 +228,8 @@ impl State {
                                 ..
                             } => {
                                 if start_position == end_position {
-                                    if self
-                                        .circuit
-                                        .tile(start_position)
-                                        .and_then(|tile| tile.component)
-                                        .is_some()
+                                    if self.circuit.component_at(start_position)
+                                        == Some(ComponentType::Pin)
                                     {
                                         self.circuit
                                             .delete_component(start_position);

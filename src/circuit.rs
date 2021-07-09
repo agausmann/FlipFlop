@@ -54,6 +54,10 @@ impl Circuit {
         self.tiles.get(&pos)
     }
 
+    pub fn component_at(&self, pos: IVec2) -> Option<ComponentType> {
+        self.component(pos).map(|component| component.get_type())
+    }
+
     pub fn can_place_wire(&mut self, start: IVec2, end: IVec2) -> bool {
         let wire_direction = wire_direction(start, end);
 
@@ -362,11 +366,11 @@ impl Circuit {
         });
         let wire = self.wires.get(&id);
         let start_connection = self
-            .component_at(start)
+            .component(start)
             .map(|component| component.connection_type(wire.direction()))
             .unwrap_or(Default::default());
         let end_connection = self
-            .component_at(end)
+            .component(end)
             .map(|component| {
                 component.connection_type(wire.direction().opposite())
             })
@@ -433,7 +437,7 @@ impl Circuit {
         wire
     }
 
-    fn component_at(&self, position: IVec2) -> Option<&Component> {
+    fn component(&self, position: IVec2) -> Option<&Component> {
         self.tile(position)
             .and_then(|tile| tile.component)
             .map(|id| self.components.get(&id))
