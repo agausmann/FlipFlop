@@ -7,6 +7,7 @@ use crate::viewport::Viewport;
 use crate::GraphicsContext;
 use glam::IVec2;
 use std::collections::{HashMap, HashSet};
+use std::fmt;
 
 pub struct Circuit {
     board_renderer: BoardRenderer,
@@ -48,6 +49,10 @@ impl Circuit {
             .draw(viewport, encoder, frame_view, depth_view);
         self.rect_renderer
             .draw(viewport, encoder, frame_view, depth_view);
+    }
+
+    pub fn tile_debug_info(&self, pos: IVec2) -> TileDebugInfo {
+        TileDebugInfo { circuit: self, pos }
     }
 
     pub fn tile(&self, pos: IVec2) -> Option<&Tile> {
@@ -530,6 +535,9 @@ impl Circuit {
                     ..
                 } = state;
 
+                self.simulation
+                    .remove_flip(input_cluster_index, output_cluster_index);
+
                 if self.has_neighbors(&GraphNode::Component(component_id, orientation.opposite())) {
                     let input_directions = [
                         orientation.right(),
@@ -556,6 +564,9 @@ impl Circuit {
                     output_cluster_index,
                     ..
                 } = state;
+
+                self.simulation
+                    .remove_flop(input_cluster_index, output_cluster_index);
 
                 if !self.has_neighbors(&GraphNode::Component(component_id, orientation.opposite()))
                 {
@@ -868,6 +879,53 @@ impl Circuit {
         let mut acc = false;
         self.neighbors(node, |_| acc = true);
         acc
+    }
+}
+
+pub struct TileDebugInfo<'a> {
+    circuit: &'a Circuit,
+    pos: IVec2,
+}
+
+impl<'a> fmt::Display for TileDebugInfo<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if let Some(tile) = self.circuit.tile(self.pos) {
+            if let Some(component_handle) = tile.component {
+                let component = self.circuit.components.get(&component_handle);
+                match &component.data {
+                    ComponentData::Pin(state, _sprite) => {
+                        writeln!(f, "Component: Pin ({})", state.cluster_index)?;
+                    }
+                    ComponentData::Flip(state, _sprite) => {
+                        writeln!(
+                            f,
+                            "Component: Flip ({} -> {})",
+                            state.input_cluster_index, state.output_cluster_index
+                        )?;
+                    }
+                    ComponentData::Flop(state, _sprite) => {
+                        writeln!(
+                            f,
+                            "Component: Flop ({} -> {})",
+                            state.input_cluster_index, state.output_cluster_index
+                        )?;
+                    }
+                }
+            }
+            let directions = [
+                Direction::East,
+                Direction::West,
+                Direction::North,
+                Direction::South,
+            ];
+            for direction in directions {
+                if let Some(wire_handle) = tile.wires.get(direction) {
+                    let wire = self.circuit.wires.get(&wire_handle);
+                    writeln!(f, "{:?} ({})", direction, wire.cluster_index)?;
+                }
+            }
+        }
+        Ok(())
     }
 }
 
