@@ -17,7 +17,7 @@ use crate::direction::Direction;
 use crate::viewport::Viewport;
 use anyhow::Context;
 use futures_executor::block_on;
-use glam::{IVec2, Vec2};
+use glam::Vec2;
 use std::sync::Arc;
 use std::time::Instant;
 use wgpu_glyph::ab_glyph::FontArc;
@@ -144,17 +144,7 @@ impl State {
 
         let viewport = Viewport::new(&gfx);
 
-        let mut circuit = Circuit::new(&gfx, &viewport);
-        circuit.place_component(
-            ComponentType::Flip,
-            IVec2::new(1, 0),
-            Direction::North,
-        );
-        circuit.place_component(
-            ComponentType::Flop,
-            IVec2::new(0, 1),
-            Direction::East,
-        );
+        let circuit = Circuit::new(&gfx, &viewport);
         let cursor_manager = CursorManager::new(&gfx, &viewport);
 
         Ok(Self {

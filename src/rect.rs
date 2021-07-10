@@ -304,7 +304,11 @@ pub struct Rect {
 #[derive(Clone, Copy)]
 pub enum Color {
     Fixed(Vec4),
-    Wire(u32),
+    Wire {
+        cluster_index: u32,
+        delayed: bool,
+        inverted: bool,
+    },
 }
 
 impl Default for Color {
@@ -323,7 +327,15 @@ impl Color {
 
     fn cluster_index(&self) -> u32 {
         match self {
-            &Self::Wire(index) => index,
+            &Self::Wire {
+                cluster_index,
+                delayed,
+                inverted,
+            } => {
+                (cluster_index << 2)
+                    | ((delayed as u32) << 1)
+                    | (inverted as u32)
+            }
             _ => 0xffffffff,
         }
     }
@@ -346,6 +358,7 @@ const BODY_Z_INDEX: u8 = 0;
 const OUTPUT_Z_INDEX: u8 = 4;
 const SIDE_PIN_Z_INDEX: u8 = 4;
 
+#[derive(Clone, Copy)]
 pub enum WireConnection {
     Pin,
     SidePin,
