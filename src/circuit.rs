@@ -355,6 +355,9 @@ impl Circuit {
                     None => self.simulation.alloc_cluster(),
                 };
 
+                self.simulation
+                    .add_flip(input_cluster_index, output_cluster_index);
+
                 let state = FlipState {
                     input_cluster_index,
                     output_cluster_index,
@@ -388,6 +391,9 @@ impl Circuit {
                     Some(node) => self.cluster_id(&node),
                     None => self.simulation.alloc_cluster(),
                 };
+
+                self.simulation
+                    .add_flop(input_cluster_index, output_cluster_index);
 
                 let state = FlopState {
                     input_cluster_index,
@@ -451,7 +457,7 @@ impl Circuit {
 
         let mut node = None;
         if let Some(component_handle) = self.tile(start).and_then(|tile| tile.component) {
-            let next = GraphNode::Component(component_handle, direction.opposite());
+            let next = GraphNode::Component(component_handle, direction);
             match node {
                 Some(current) => {
                     self.merge_clusters(current, next);
@@ -462,7 +468,7 @@ impl Circuit {
             }
         }
         if let Some(component_handle) = self.tile(end).and_then(|tile| tile.component) {
-            let next = GraphNode::Component(component_handle, direction);
+            let next = GraphNode::Component(component_handle, direction.opposite());
             match node {
                 Some(current) => {
                     self.merge_clusters(current, next);
@@ -505,29 +511,14 @@ impl Circuit {
         let component = self.components.get(&component_id);
 
         // Move/copy out to prevent lifetime errors
-        let position = component.position;
         let orientation = component.orientation;
         match &component.data {
-            ComponentData::Pin(state, sprite) => {
-                self.rect_renderer.remove(&sprite.pin);
-
-                if self.has_neighbors(&GraphNode::Component(component_id, Direction::North)) {
-                    let directions = [
-                        Direction::North,
-                        Direction::East,
-                        Direction::South,
-                        Direction::West,
-                    ];
-                    self.split_all(position, &directions);
-                } else {
+            ComponentData::Pin(state, _sprite) => {
+                if !self.has_neighbors(&GraphNode::Component(component_id, Direction::North)) {
                     self.simulation.free_cluster(state.cluster_index);
                 }
             }
-            ComponentData::Flip(state, sprite) => {
-                self.rect_renderer.remove(&sprite.body);
-                self.rect_renderer.remove(&sprite.input);
-                self.rect_renderer.remove(&sprite.output);
-
+            ComponentData::Flip(state, _sprite) => {
                 // Move/copy out to prevent lifetime errors
                 let &FlipState {
                     input_cluster_index,
@@ -538,26 +529,15 @@ impl Circuit {
                 self.simulation
                     .remove_flip(input_cluster_index, output_cluster_index);
 
-                if self.has_neighbors(&GraphNode::Component(component_id, orientation.opposite())) {
-                    let input_directions = [
-                        orientation.right(),
-                        orientation.opposite(),
-                        orientation.left(),
-                    ];
-                    self.split_all(position, &input_directions);
-                } else {
+                if !self.has_neighbors(&GraphNode::Component(component_id, orientation.opposite()))
+                {
                     self.simulation.free_cluster(input_cluster_index);
                 }
-
                 if !self.has_neighbors(&GraphNode::Component(component_id, orientation)) {
                     self.simulation.free_cluster(output_cluster_index);
                 }
             }
-            ComponentData::Flop(state, sprite) => {
-                self.rect_renderer.remove(&sprite.body);
-                self.rect_renderer.remove(&sprite.input);
-                self.rect_renderer.remove(&sprite.output);
-
+            ComponentData::Flop(state, _sprite) => {
                 // Move/copy out to prevent lifetime errors
                 let &FlopState {
                     input_cluster_index,
@@ -582,24 +562,71 @@ impl Circuit {
         let tile = self.tiles.get_mut(&component.position).unwrap();
         tile.component = None;
         tile.update_crossover(component.position, &mut self.rect_renderer);
+
+        match &component.data {
+            ComponentData::Pin(_state, sprite) => {
+                self.rect_renderer.remove(&sprite.pin);
+
+                let directions = [
+                    Direction::North,
+                    Direction::East,
+                    Direction::South,
+                    Direction::West,
+                ];
+                self.split_all(component.position, &directions);
+            }
+            ComponentData::Flip(_state, sprite) => {
+                self.rect_renderer.remove(&sprite.body);
+                self.rect_renderer.remove(&sprite.input);
+                self.rect_renderer.remove(&sprite.output);
+
+                let input_directions = [
+                    orientation.right(),
+                    orientation.opposite(),
+                    orientation.left(),
+                ];
+                self.split_all(component.position, &input_directions);
+            }
+            ComponentData::Flop(_state, sprite) => {
+                self.rect_renderer.remove(&sprite.body);
+                self.rect_renderer.remove(&sprite.input);
+                self.rect_renderer.remove(&sprite.output);
+            }
+        }
         component
     }
 
     fn remove_wire(&mut self, wire_id: depot::Handle) -> Wire {
+        let wire = self.wires.get(&wire_id);
+
+        if !self.has_neighbors(&GraphNode::Wire(wire_id)) {
+            self.simulation.free_cluster(wire.cluster_index);
+        }
+
         let wire = self.wires.remove(&wire_id);
         for tile_pos in wire.tiles() {
             let tile = self.tiles.get_mut(&tile_pos).unwrap();
             if tile_pos != wire.start {
-                assert!(tile.wires.get(wire.direction().opposite()) == Some(wire_id));
+                assert_eq!(tile.wires.get(wire.direction().opposite()), Some(wire_id));
                 *tile.wires.get_mut(wire.direction().opposite()) = None;
             }
             if tile_pos != wire.end {
-                assert!(tile.wires.get(wire.direction()) == Some(wire_id));
+                assert_eq!(tile.wires.get(wire.direction()), Some(wire_id));
                 *tile.wires.get_mut(wire.direction()) = None;
             }
             tile.update_crossover(tile_pos, &mut self.rect_renderer);
         }
         self.rect_renderer.remove(&wire.instance);
+
+        let start_component = self.tile(wire.start).and_then(|tile| tile.component);
+        let end_component = self.tile(wire.end).and_then(|tile| tile.component);
+        if let (Some(start), Some(end)) = (start_component, end_component) {
+            self.split_clusters(
+                GraphNode::Component(start, wire.direction()),
+                GraphNode::Component(end, wire.direction().opposite()),
+            );
+        }
+
         wire
     }
 
@@ -778,7 +805,7 @@ impl Circuit {
         visited.insert(*node);
         queue.push(*node);
         while let Some(next) = queue.pop() {
-            debug_assert!(self.cluster_id(&next) == id);
+            debug_assert_eq!(self.cluster_id(&next), id);
 
             self.neighbors(&next, |neighbor| {
                 // Only enqueue if this is the first time it has been seen.
@@ -827,14 +854,14 @@ impl Circuit {
                 let wire = self.wires.get(&handle);
                 let start_tile = self.tile(wire.start).unwrap();
                 if let Some(component_handle) = start_tile.component {
+                    visitor(GraphNode::Component(component_handle, wire.direction()));
+                }
+                let end_tile = self.tile(wire.end).unwrap();
+                if let Some(component_handle) = end_tile.component {
                     visitor(GraphNode::Component(
                         component_handle,
                         wire.direction().opposite(),
                     ));
-                }
-                let end_tile = self.tile(wire.end).unwrap();
-                if let Some(component_handle) = end_tile.component {
-                    visitor(GraphNode::Component(component_handle, wire.direction()));
                 }
             }
             &GraphNode::Component(handle, direction) => {
@@ -900,14 +927,14 @@ impl<'a> fmt::Display for TileDebugInfo<'a> {
                         writeln!(
                             f,
                             "Component: Flip ({} -> {})",
-                            state.input_cluster_index, state.output_cluster_index
+                            state.input_cluster_index, state.output_cluster_index,
                         )?;
                     }
                     ComponentData::Flop(state, _sprite) => {
                         writeln!(
                             f,
                             "Component: Flop ({} -> {})",
-                            state.input_cluster_index, state.output_cluster_index
+                            state.input_cluster_index, state.output_cluster_index,
                         )?;
                     }
                 }
