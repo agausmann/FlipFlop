@@ -42,16 +42,15 @@ struct Instance {
     cluster_index: u32,
 }
 
-static INSTANCE_ATTRIBUTES: Lazy<[wgpu::VertexAttribute; 5]> =
-    Lazy::new(|| {
-        wgpu::vertex_attr_array![
-            1 => Float32x2,
-            2 => Float32,
-            3 => Float32x2,
-            4 => Float32x4,
-            5 => Uint32,
-        ]
-    });
+static INSTANCE_ATTRIBUTES: Lazy<[wgpu::VertexAttribute; 5]> = Lazy::new(|| {
+    wgpu::vertex_attr_array![
+        1 => Float32x2,
+        2 => Float32,
+        3 => Float32x2,
+        4 => Float32x4,
+        5 => Uint32,
+    ]
+});
 
 impl Instance {
     fn buffer_layout() -> wgpu::VertexBufferLayout<'static> {
@@ -101,57 +100,50 @@ pub struct RectRenderer {
 
 impl RectRenderer {
     pub fn new(gfx: &GraphicsContext, viewport: &Viewport) -> Self {
-        let bind_group_layout = gfx.device.create_bind_group_layout(
-            &wgpu::BindGroupLayoutDescriptor {
-                label: Some("RectRenderer.bind_group_layout"),
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStage::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage {
-                            read_only: true,
+        let bind_group_layout =
+            gfx.device
+                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                    label: Some("RectRenderer.bind_group_layout"),
+                    entries: &[wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStage::VERTEX,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
                         },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                }],
-            },
-        );
+                        count: None,
+                    }],
+                });
 
-        let pipeline_layout = gfx.device.create_pipeline_layout(
-            &wgpu::PipelineLayoutDescriptor {
+        let pipeline_layout = gfx
+            .device
+            .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("RectRenderer.pipeline_layout"),
-                bind_group_layouts: &[
-                    viewport.bind_group_layout(),
-                    &bind_group_layout,
-                ],
+                bind_group_layouts: &[viewport.bind_group_layout(), &bind_group_layout],
                 push_constant_ranges: &[],
-            },
-        );
-        let vertex_module =
-            gfx.device
-                .create_shader_module(&wgpu::include_spirv!(concat!(
-                    env!("OUT_DIR"),
-                    "/shaders/rect.vert.spv"
-                )));
-        let fragment_module =
-            gfx.device
-                .create_shader_module(&wgpu::include_spirv!(concat!(
-                    env!("OUT_DIR"),
-                    "/shaders/rect.frag.spv"
-                )));
-        let render_pipeline = gfx.device.create_render_pipeline(
-            &wgpu::RenderPipelineDescriptor {
+            });
+        let vertex_module = gfx
+            .device
+            .create_shader_module(&wgpu::include_spirv!(concat!(
+                env!("OUT_DIR"),
+                "/shaders/rect.vert.spv"
+            )));
+        let fragment_module = gfx
+            .device
+            .create_shader_module(&wgpu::include_spirv!(concat!(
+                env!("OUT_DIR"),
+                "/shaders/rect.frag.spv"
+            )));
+        let render_pipeline = gfx
+            .device
+            .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some("RectRenderer.render_pipeline"),
                 layout: Some(&pipeline_layout),
                 vertex: wgpu::VertexState {
                     module: &vertex_module,
                     entry_point: "main",
-                    buffers: &[
-                        Vertex::buffer_layout(),
-                        Instance::buffer_layout(),
-                    ],
+                    buffers: &[Vertex::buffer_layout(), Instance::buffer_layout()],
                 },
                 primitive: wgpu::PrimitiveState {
                     topology: wgpu::PrimitiveTopology::TriangleList,
@@ -182,22 +174,21 @@ impl RectRenderer {
                         write_mask: wgpu::ColorWrite::ALL,
                     }],
                 }),
-            },
-        );
-        let vertex_buffer =
-            gfx.device
-                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("RectRenderer.vertex_buffer"),
-                    contents: bytemuck::cast_slice(VERTICES),
-                    usage: wgpu::BufferUsage::VERTEX,
-                });
-        let index_buffer =
-            gfx.device
-                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("RectRenderer.index_buffer"),
-                    contents: bytemuck::cast_slice(INDICES),
-                    usage: wgpu::BufferUsage::INDEX,
-                });
+            });
+        let vertex_buffer = gfx
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("RectRenderer.vertex_buffer"),
+                contents: bytemuck::cast_slice(VERTICES),
+                usage: wgpu::BufferUsage::VERTEX,
+            });
+        let index_buffer = gfx
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("RectRenderer.index_buffer"),
+                contents: bytemuck::cast_slice(INDICES),
+                usage: wgpu::BufferUsage::INDEX,
+            });
         let cluster_state_buffer =
             gfx.device
                 .create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -206,15 +197,14 @@ impl RectRenderer {
                     usage: wgpu::BufferUsage::STORAGE,
                 });
 
-        let bind_group =
-            gfx.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("RectRenderer.bind_group"),
-                layout: &bind_group_layout,
-                entries: &[wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: cluster_state_buffer.as_entire_binding(),
-                }],
-            });
+        let bind_group = gfx.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("RectRenderer.bind_group"),
+            layout: &bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: cluster_state_buffer.as_entire_binding(),
+            }],
+        });
 
         let instances = InstanceManager::new(gfx);
 
@@ -253,36 +243,30 @@ impl RectRenderer {
             None => return,
         };
 
-        let mut render_pass =
-            encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("RectRenderer.render_pass"),
-                color_attachments: &[wgpu::RenderPassColorAttachment {
-                    view: &frame_view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: true,
-                    },
-                }],
-                depth_stencil_attachment: Some(
-                    wgpu::RenderPassDepthStencilAttachment {
-                        view: depth_view,
-                        depth_ops: Some(wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(0.0),
-                            store: true,
-                        }),
-                        stencil_ops: None,
-                    },
-                ),
-            });
+        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("RectRenderer.render_pass"),
+            color_attachments: &[wgpu::RenderPassColorAttachment {
+                view: &frame_view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: true,
+                },
+            }],
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: depth_view,
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(0.0),
+                    store: true,
+                }),
+                stencil_ops: None,
+            }),
+        });
 
         render_pass.set_pipeline(&self.render_pipeline);
         render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
         render_pass.set_vertex_buffer(1, instance_buffer.slice(..));
-        render_pass.set_index_buffer(
-            self.index_buffer.slice(..),
-            wgpu::IndexFormat::Uint16,
-        );
+        render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
         render_pass.set_bind_group(0, viewport.bind_group(), &[]);
         render_pass.set_bind_group(1, &self.bind_group, &[]);
         render_pass.draw_indexed(
@@ -331,11 +315,7 @@ impl Color {
                 cluster_index,
                 delayed,
                 inverted,
-            } => {
-                (cluster_index << 2)
-                    | ((delayed as u32) << 1)
-                    | (inverted as u32)
-            }
+            } => (cluster_index << 2) | ((delayed as u32) << 1) | (inverted as u32),
             _ => 0xffffffff,
         }
     }
@@ -504,8 +484,7 @@ pub struct Crossover {
 impl From<Crossover> for Rect {
     fn from(cross: Crossover) -> Self {
         Self {
-            position: cross.position.as_f32()
-                + Vec2::splat(0.5 - CROSSOVER_RADIUS),
+            position: cross.position.as_f32() + Vec2::splat(0.5 - CROSSOVER_RADIUS),
             z_index: CROSSOVER_Z_INDEX,
             size: Vec2::splat(2.0 * CROSSOVER_RADIUS),
             color: Color::Fixed(Vec4::new(0.5, 0.5, 0.5, 1.0)),

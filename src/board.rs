@@ -43,15 +43,14 @@ struct Instance {
 
 const MAX_Z_INDEX: u32 = 255;
 
-static INSTANCE_ATTRIBUTES: Lazy<[wgpu::VertexAttribute; 4]> =
-    Lazy::new(|| {
-        wgpu::vertex_attr_array![
-            1 => Float32x2,
-            2 => Float32x2,
-            3 => Float32x4,
-            4 => Float32,
-        ]
-    });
+static INSTANCE_ATTRIBUTES: Lazy<[wgpu::VertexAttribute; 4]> = Lazy::new(|| {
+    wgpu::vertex_attr_array![
+        1 => Float32x2,
+        2 => Float32x2,
+        3 => Float32x4,
+        4 => Float32,
+    ]
+});
 
 impl Instance {
     fn buffer_layout() -> wgpu::VertexBufferLayout<'static> {
@@ -99,68 +98,61 @@ pub struct BoardRenderer {
 
 impl BoardRenderer {
     pub fn new(gfx: &GraphicsContext, viewport: &Viewport) -> Self {
-        let bind_group_layout = gfx.device.create_bind_group_layout(
-            &wgpu::BindGroupLayoutDescriptor {
-                label: Some("BoardRenderer.bind_group_layout"),
-                entries: &[
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStage::FRAGMENT,
-                        ty: wgpu::BindingType::Texture {
-                            multisampled: false,
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                            sample_type: wgpu::TextureSampleType::Float {
-                                filterable: false,
+        let bind_group_layout =
+            gfx.device
+                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                    label: Some("BoardRenderer.bind_group_layout"),
+                    entries: &[
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 0,
+                            visibility: wgpu::ShaderStage::FRAGMENT,
+                            ty: wgpu::BindingType::Texture {
+                                multisampled: false,
+                                view_dimension: wgpu::TextureViewDimension::D2,
+                                sample_type: wgpu::TextureSampleType::Float { filterable: false },
                             },
+                            count: None,
                         },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: wgpu::ShaderStage::FRAGMENT,
-                        ty: wgpu::BindingType::Sampler {
-                            comparison: false,
-                            filtering: true,
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 1,
+                            visibility: wgpu::ShaderStage::FRAGMENT,
+                            ty: wgpu::BindingType::Sampler {
+                                comparison: false,
+                                filtering: true,
+                            },
+                            count: None,
                         },
-                        count: None,
-                    },
-                ],
-            },
-        );
+                    ],
+                });
 
-        let pipeline_layout = gfx.device.create_pipeline_layout(
-            &wgpu::PipelineLayoutDescriptor {
+        let pipeline_layout = gfx
+            .device
+            .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("BoardRenderer.pipeline_layout"),
-                bind_group_layouts: &[
-                    viewport.bind_group_layout(),
-                    &bind_group_layout,
-                ],
+                bind_group_layouts: &[viewport.bind_group_layout(), &bind_group_layout],
                 push_constant_ranges: &[],
-            },
-        );
-        let vertex_module =
-            gfx.device
-                .create_shader_module(&wgpu::include_spirv!(concat!(
-                    env!("OUT_DIR"),
-                    "/shaders/board.vert.spv"
-                )));
-        let fragment_module =
-            gfx.device
-                .create_shader_module(&wgpu::include_spirv!(concat!(
-                    env!("OUT_DIR"),
-                    "/shaders/board.frag.spv"
-                )));
-        let render_pipeline = gfx.device.create_render_pipeline(
-            &wgpu::RenderPipelineDescriptor {
+            });
+        let vertex_module = gfx
+            .device
+            .create_shader_module(&wgpu::include_spirv!(concat!(
+                env!("OUT_DIR"),
+                "/shaders/board.vert.spv"
+            )));
+        let fragment_module = gfx
+            .device
+            .create_shader_module(&wgpu::include_spirv!(concat!(
+                env!("OUT_DIR"),
+                "/shaders/board.frag.spv"
+            )));
+        let render_pipeline = gfx
+            .device
+            .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some("BoardRenderer.render_pipeline"),
                 layout: Some(&pipeline_layout),
                 vertex: wgpu::VertexState {
                     module: &vertex_module,
                     entry_point: "main",
-                    buffers: &[
-                        Vertex::buffer_layout(),
-                        Instance::buffer_layout(),
-                    ],
+                    buffers: &[Vertex::buffer_layout(), Instance::buffer_layout()],
                 },
                 primitive: wgpu::PrimitiveState {
                     topology: wgpu::PrimitiveTopology::TriangleList,
@@ -191,27 +183,25 @@ impl BoardRenderer {
                         write_mask: wgpu::ColorWrite::ALL,
                     }],
                 }),
-            },
-        );
-        let vertex_buffer =
-            gfx.device
-                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("BoardRenderer.vertex_buffer"),
-                    contents: bytemuck::cast_slice(VERTICES),
-                    usage: wgpu::BufferUsage::VERTEX,
-                });
-        let index_buffer =
-            gfx.device
-                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("BoardRenderer.index_buffer"),
-                    contents: bytemuck::cast_slice(INDICES),
-                    usage: wgpu::BufferUsage::INDEX,
-                });
+            });
+        let vertex_buffer = gfx
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("BoardRenderer.vertex_buffer"),
+                contents: bytemuck::cast_slice(VERTICES),
+                usage: wgpu::BufferUsage::VERTEX,
+            });
+        let index_buffer = gfx
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("BoardRenderer.index_buffer"),
+                contents: bytemuck::cast_slice(INDICES),
+                usage: wgpu::BufferUsage::INDEX,
+            });
 
-        let board_image =
-            image::load_from_memory(include_bytes!("textures/board.png"))
-                .expect("failed to load board texture")
-                .into_rgba8();
+        let board_image = image::load_from_memory(include_bytes!("textures/board.png"))
+            .expect("failed to load board texture")
+            .into_rgba8();
         let size = wgpu::Extent3d {
             width: board_image.width(),
             height: board_image.height(),
@@ -250,23 +240,20 @@ impl BoardRenderer {
             mipmap_filter: wgpu::FilterMode::Linear,
             ..Default::default()
         });
-        let bind_group =
-            gfx.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("BoardRenderer.bind_group"),
-                layout: &bind_group_layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::TextureView(
-                            &texture_view,
-                        ),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::Sampler(&sampler),
-                    },
-                ],
-            });
+        let bind_group = gfx.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("BoardRenderer.bind_group"),
+            layout: &bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&texture_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&sampler),
+                },
+            ],
+        });
 
         let instances = InstanceManager::new(gfx);
 
@@ -304,41 +291,35 @@ impl BoardRenderer {
             None => return,
         };
 
-        let mut render_pass =
-            encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("BoardRenderer.render_pass"),
-                color_attachments: &[wgpu::RenderPassColorAttachment {
-                    view: &frame_view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.1,
-                            g: 0.2,
-                            b: 0.3,
-                            a: 1.0,
-                        }),
-                        store: true,
-                    },
-                }],
-                depth_stencil_attachment: Some(
-                    wgpu::RenderPassDepthStencilAttachment {
-                        view: depth_view,
-                        depth_ops: Some(wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(0.0),
-                            store: true,
-                        }),
-                        stencil_ops: None,
-                    },
-                ),
-            });
+        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("BoardRenderer.render_pass"),
+            color_attachments: &[wgpu::RenderPassColorAttachment {
+                view: &frame_view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color {
+                        r: 0.1,
+                        g: 0.2,
+                        b: 0.3,
+                        a: 1.0,
+                    }),
+                    store: true,
+                },
+            }],
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: depth_view,
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(0.0),
+                    store: true,
+                }),
+                stencil_ops: None,
+            }),
+        });
 
         render_pass.set_pipeline(&self.render_pipeline);
         render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
         render_pass.set_vertex_buffer(1, instance_buffer.slice(..));
-        render_pass.set_index_buffer(
-            self.index_buffer.slice(..),
-            wgpu::IndexFormat::Uint16,
-        );
+        render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
         render_pass.set_bind_group(0, viewport.bind_group(), &[]);
         render_pass.set_bind_group(1, &self.bind_group, &[]);
         render_pass.draw_indexed(

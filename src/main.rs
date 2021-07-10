@@ -23,8 +23,7 @@ use std::time::Instant;
 use wgpu_glyph::ab_glyph::FontArc;
 use wgpu_glyph::{GlyphBrushBuilder, Section, Text};
 use winit::event::{
-    ElementState, Event, MouseButton, MouseScrollDelta, VirtualKeyCode,
-    WindowEvent,
+    ElementState, Event, MouseButton, MouseScrollDelta, VirtualKeyCode, WindowEvent,
 };
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::{CursorIcon, Window, WindowBuilder};
@@ -65,8 +64,7 @@ impl GraphicsContextInner {
             .context("Failed to open device")?;
 
         // XXX does this produce incompatible formats on different backends?
-        let render_format =
-            adapter.get_swap_chain_preferred_format(&surface).unwrap();
+        let render_format = adapter.get_swap_chain_preferred_format(&surface).unwrap();
         let depth_format = wgpu::TextureFormat::Depth32Float;
 
         Ok(Self {
@@ -121,8 +119,7 @@ fn create_depth_texture(gfx: &GraphicsContext) -> wgpu::Texture {
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
         format: gfx.depth_format,
-        usage: wgpu::TextureUsage::RENDER_ATTACHMENT
-            | wgpu::TextureUsage::SAMPLED,
+        usage: wgpu::TextureUsage::RENDER_ATTACHMENT | wgpu::TextureUsage::SAMPLED,
     })
 }
 
@@ -133,11 +130,9 @@ impl State {
         let depth_texture = create_depth_texture(&gfx);
         let depth_texture_view = depth_texture.create_view(&Default::default());
 
-        let fira_sans = FontArc::try_from_slice(include_bytes!(
-            "fonts/FiraSans-Regular.ttf"
-        ))?;
-        let glyph_brush = GlyphBrushBuilder::using_font(fira_sans)
-            .build(&gfx.device, gfx.render_format);
+        let fira_sans = FontArc::try_from_slice(include_bytes!("fonts/FiraSans-Regular.ttf"))?;
+        let glyph_brush =
+            GlyphBrushBuilder::using_font(fira_sans).build(&gfx.device, gfx.render_format);
         let staging_belt = wgpu::util::StagingBelt::new(1024);
         let local_pool = futures_executor::LocalPool::new();
         let local_spawner = local_pool.spawner();
@@ -170,99 +165,84 @@ impl State {
             WindowEvent::CloseRequested => {
                 self.should_close = true;
             }
-            WindowEvent::Resized(..)
-            | WindowEvent::ScaleFactorChanged { .. } => {
+            WindowEvent::Resized(..) | WindowEvent::ScaleFactorChanged { .. } => {
                 self.rebuild_swap_chain();
             }
             WindowEvent::CursorMoved { position, .. } => {
                 let position = Vec2::new(position.x as f32, position.y as f32);
                 self.viewport.cursor_moved(position);
             }
-            WindowEvent::MouseInput { button, state, .. } => {
-                match (button, state) {
-                    (MouseButton::Middle, ElementState::Pressed) => {
-                        self.cursor_manager.start_pan(&self.viewport);
-                        self.gfx.window.set_cursor_icon(CursorIcon::Grabbing);
+            WindowEvent::MouseInput { button, state, .. } => match (button, state) {
+                (MouseButton::Middle, ElementState::Pressed) => {
+                    self.cursor_manager.start_pan(&self.viewport);
+                    self.gfx.window.set_cursor_icon(CursorIcon::Grabbing);
+                }
+                (MouseButton::Middle, ElementState::Released) => {
+                    match self.cursor_manager.current_state() {
+                        CursorState::Pan { .. } => {
+                            self.cursor_manager.end();
+                            self.gfx.window.set_cursor_icon(CursorIcon::Default);
+                        }
+                        _ => {}
                     }
-                    (MouseButton::Middle, ElementState::Released) => {
-                        match self.cursor_manager.current_state() {
-                            CursorState::Pan { .. } => {
-                                self.cursor_manager.end();
-                                self.gfx
-                                    .window
-                                    .set_cursor_icon(CursorIcon::Default);
-                            }
-                            _ => {}
+                }
+                (MouseButton::Left, ElementState::Pressed) => {
+                    match self.cursor_manager.place_type() {
+                        ComponentType::Pin => {
+                            self.cursor_manager.start_place_wire(&self.viewport);
+                        }
+                        other_type => {
+                            self.circuit.place_component(
+                                other_type,
+                                self.viewport.cursor().tile(),
+                                self.cursor_manager.place_orientation(),
+                            );
                         }
                     }
-                    (MouseButton::Left, ElementState::Pressed) => {
-                        match self.cursor_manager.place_type() {
-                            ComponentType::Pin => {
-                                self.cursor_manager
-                                    .start_place_wire(&self.viewport);
-                            }
-                            other_type => {
-                                self.circuit.place_component(
-                                    other_type,
-                                    self.viewport.cursor().tile(),
-                                    self.cursor_manager.place_orientation(),
-                                );
-                            }
-                        }
-                    }
-                    (MouseButton::Left, ElementState::Released) => {
-                        match self.cursor_manager.current_state() {
-                            &CursorState::PlaceWire {
-                                start_position,
-                                end_position,
-                                ..
-                            } => {
-                                if start_position == end_position {
-                                    if self.circuit.component_at(start_position)
-                                        == Some(ComponentType::Pin)
-                                    {
-                                        self.circuit
-                                            .delete_component(start_position);
-                                    } else {
-                                        self.circuit.place_component(
-                                            ComponentType::Pin,
-                                            start_position,
-                                            Direction::East,
-                                        );
-                                    }
+                }
+                (MouseButton::Left, ElementState::Released) => {
+                    match self.cursor_manager.current_state() {
+                        &CursorState::PlaceWire {
+                            start_position,
+                            end_position,
+                            ..
+                        } => {
+                            if start_position == end_position {
+                                if self.circuit.component_at(start_position)
+                                    == Some(ComponentType::Pin)
+                                {
+                                    self.circuit.delete_component(start_position);
                                 } else {
-                                    self.circuit.place_wire(
+                                    self.circuit.place_component(
+                                        ComponentType::Pin,
                                         start_position,
-                                        end_position,
+                                        Direction::East,
                                     );
                                 }
-                                self.cursor_manager.end();
+                            } else {
+                                self.circuit.place_wire(start_position, end_position);
                             }
-                            _ => {}
+                            self.cursor_manager.end();
                         }
+                        _ => {}
                     }
-                    (MouseButton::Right, ElementState::Pressed) => {
-                        match &self.cursor_manager.current_state() {
-                            &CursorState::Normal => {
-                                let position = self.viewport.cursor().tile();
-                                self.circuit.delete_all_at(position);
-                            }
-                            _ => {}
-                        }
-                    }
-                    _ => {}
                 }
-            }
-            WindowEvent::MouseWheel { delta, .. } => match &self
-                .cursor_manager
-                .current_state()
-            {
+                (MouseButton::Right, ElementState::Pressed) => {
+                    match &self.cursor_manager.current_state() {
+                        &CursorState::Normal => {
+                            let position = self.viewport.cursor().tile();
+                            self.circuit.delete_all_at(position);
+                        }
+                        _ => {}
+                    }
+                }
+                _ => {}
+            },
+            WindowEvent::MouseWheel { delta, .. } => match &self.cursor_manager.current_state() {
                 CursorState::Normal => {
                     let delta = match delta {
                         MouseScrollDelta::LineDelta(_x, y) => y,
-                        MouseScrollDelta::PixelDelta(position) => {
-                            position.y as f32 / 16.0
-                        }
+                        MouseScrollDelta::PixelDelta(position) => position.y as f32 / 16.0,
                     };
                     let camera = self.viewport.camera_mut();
                     camera.set_zoom(camera.zoom * camera.zoom_step.powf(delta));
@@ -296,16 +276,13 @@ impl State {
                             self.viewport.camera_mut().zoom_out = pressed;
                         }
                         VirtualKeyCode::Key1 if pressed => {
-                            self.cursor_manager
-                                .set_place_type(ComponentType::Pin);
+                            self.cursor_manager.set_place_type(ComponentType::Pin);
                         }
                         VirtualKeyCode::Key2 if pressed => {
-                            self.cursor_manager
-                                .set_place_type(ComponentType::Flip);
+                            self.cursor_manager.set_place_type(ComponentType::Flip);
                         }
                         VirtualKeyCode::Key3 if pressed => {
-                            self.cursor_manager
-                                .set_place_type(ComponentType::Flop);
+                            self.cursor_manager.set_place_type(ComponentType::Flop);
                         }
                         VirtualKeyCode::R if pressed => {
                             self.cursor_manager.set_place_orientation(
@@ -338,8 +315,7 @@ impl State {
                 Err(wgpu::SwapChainError::Lost) => {
                     self.rebuild_swap_chain();
                 }
-                Err(wgpu::SwapChainError::Timeout)
-                | Err(wgpu::SwapChainError::Outdated) => {
+                Err(wgpu::SwapChainError::Timeout) | Err(wgpu::SwapChainError::Outdated) => {
                     return Ok(());
                 }
                 Err(err) => {
@@ -348,8 +324,7 @@ impl State {
             }
         };
 
-        let mut encoder =
-            self.gfx.device.create_command_encoder(&Default::default());
+        let mut encoder = self.gfx.device.create_command_encoder(&Default::default());
 
         {
             self.circuit.draw(
@@ -400,10 +375,8 @@ impl State {
 
     fn debug_text(&self) -> String {
         let fps = self.frame_counter.rate();
-        let cursor_pos =
-            <(f32, f32)>::from(self.viewport.cursor().screen_position);
-        let world_pos =
-            <(f32, f32)>::from(self.viewport.cursor().world_position);
+        let cursor_pos = <(f32, f32)>::from(self.viewport.cursor().screen_position);
+        let world_pos = <(f32, f32)>::from(self.viewport.cursor().world_position);
         let cursor_tile = <(i32, i32)>::from(self.viewport.cursor().tile());
         let tile = self.circuit.tile(self.viewport.cursor().tile());
         let component = tile.and_then(|tile| tile.component);
@@ -422,15 +395,7 @@ impl State {
             West: {:?}\n\
             North: {:?}\n\
             South: {:?}",
-            fps,
-            cursor_pos,
-            world_pos,
-            cursor_tile,
-            component,
-            east,
-            west,
-            north,
-            south,
+            fps, cursor_pos, world_pos, cursor_tile, component, east, west, north, south,
         )
     }
 
@@ -438,8 +403,7 @@ impl State {
         self.swap_chain = create_swap_chain(&self.gfx);
 
         self.depth_texture = create_depth_texture(&self.gfx);
-        self.depth_texture_view =
-            self.depth_texture.create_view(&Default::default());
+        self.depth_texture_view = self.depth_texture.create_view(&Default::default());
     }
 }
 

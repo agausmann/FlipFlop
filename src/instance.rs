@@ -95,17 +95,12 @@ where
             let new_cap = cap.checked_next_power_of_two().unwrap();
             let bytes = std::mem::size_of::<T>() * new_cap;
 
-            let buffer =
-                self.gfx.device.create_buffer(&wgpu::BufferDescriptor {
-                    label: Some(&format!(
-                        "{}.buffer",
-                        std::any::type_name::<Self>()
-                    )),
-                    size: bytes.try_into().unwrap(),
-                    usage: wgpu::BufferUsage::VERTEX
-                        | wgpu::BufferUsage::COPY_DST,
-                    mapped_at_creation: false,
-                });
+            let buffer = self.gfx.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some(&format!("{}.buffer", std::any::type_name::<Self>())),
+                size: bytes.try_into().unwrap(),
+                usage: wgpu::BufferUsage::VERTEX | wgpu::BufferUsage::COPY_DST,
+                mapped_at_creation: false,
+            });
             self.buffer = Some(buffer);
             self.buffer_capacity = new_cap;
         }

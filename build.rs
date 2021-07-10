@@ -9,16 +9,14 @@ fn main() -> anyhow::Result<()> {
 
     let shader_src_dir = Path::new("src/shaders/");
     let shader_out_dir = out_dir.join("shaders");
-    let mut compiler =
-        shaderc::Compiler::new().context("cannot instantiate compiler")?;
+    let mut compiler = shaderc::Compiler::new().context("cannot instantiate compiler")?;
 
     println!(
         "cargo:rerun-if-changed={}",
         shader_src_dir.to_str().context("path is not valid UTF-8")?
     );
 
-    std::fs::create_dir_all(&shader_out_dir)
-        .context("cannot create shader output directory")?;
+    std::fs::create_dir_all(&shader_out_dir).context("cannot create shader output directory")?;
 
     for src_path_result in glob("src/shaders/**/*")? {
         let src_path = match src_path_result {
@@ -56,21 +54,18 @@ fn main() -> anyhow::Result<()> {
             ),
         };
 
-        let relative_path =
-            src_path.strip_prefix(shader_src_dir).with_context(|| {
-                format!(
-                    "bad prefix of path {:?} (expected {:?})",
-                    src_path, shader_src_dir,
-                )
-            })?;
+        let relative_path = src_path.strip_prefix(shader_src_dir).with_context(|| {
+            format!(
+                "bad prefix of path {:?} (expected {:?})",
+                src_path, shader_src_dir,
+            )
+        })?;
         let out_path = shader_out_dir
             .join(relative_path)
             .with_extension(format!("{}.spv", extension));
 
         process_shader(&mut compiler, &src_path, &out_path, kind)
-            .with_context(|| {
-                format!("{:?}: unable to process shader", src_path)
-            })?;
+            .with_context(|| format!("{:?}: unable to process shader", src_path))?;
     }
 
     Ok(())
@@ -82,8 +77,7 @@ fn process_shader(
     out_path: &Path,
     shader_kind: shaderc::ShaderKind,
 ) -> anyhow::Result<()> {
-    let source = std::fs::read_to_string(&src_path)
-        .context("cannot read shader source")?;
+    let source = std::fs::read_to_string(&src_path).context("cannot read shader source")?;
 
     let artifact = compiler
         .compile_into_spirv(
@@ -94,8 +88,7 @@ fn process_shader(
             None,
         )
         .context("failed to parse shader source")?;
-    std::fs::write(out_path, artifact.as_binary_u8())
-        .context("failed to write shader binary")?;
+    std::fs::write(out_path, artifact.as_binary_u8()).context("failed to write shader binary")?;
 
     Ok(())
 }
