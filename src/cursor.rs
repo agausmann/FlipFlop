@@ -4,7 +4,9 @@ use crate::rect::{self, Color, RectRenderer};
 use crate::screen_vertex::ScreenVertexShader;
 use crate::viewport::Viewport;
 use crate::GraphicsContext;
-use glam::{IVec2, Vec2, Vec4};
+use bytemuck::{Pod, Zeroable};
+use glam::{IVec2, Vec2, Vec3, Vec4};
+use wgpu::util::DeviceExt;
 
 pub struct CursorManager {
     gfx: GraphicsContext,
@@ -16,6 +18,9 @@ pub struct CursorManager {
     screen_vertex_shader: &'static ScreenVertexShader,
     outline_render_pipeline: wgpu::RenderPipeline,
     outline_bind_group_layout: wgpu::BindGroupLayout,
+    outline_depth_sampler: wgpu::Sampler,
+    outline_uniform_buffer: wgpu::Buffer,
+    uniforms: Uniforms,
 }
 
 impl CursorManager {
@@ -45,6 +50,16 @@ impl CursorManager {
                                 sample_type: wgpu::TextureSampleType::Float { filterable: false },
                                 view_dimension: wgpu::TextureViewDimension::D2,
                                 multisampled: false,
+                            },
+                            count: None,
+                        },
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 2,
+                            visibility: wgpu::ShaderStage::FRAGMENT,
+                            ty: wgpu::BindingType::Buffer {
+                                ty: wgpu::BufferBindingType::Uniform,
+                                has_dynamic_offset: false,
+                                min_binding_size: None,
                             },
                             count: None,
                         },
@@ -83,6 +98,19 @@ impl CursorManager {
                     }),
                 });
 
+        let outline_depth_sampler = gfx.device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("CursorManager.outline_depth_sampler"),
+            ..Default::default()
+        });
+        let uniforms = Uniforms::default();
+        let outline_uniform_buffer =
+            gfx.device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("CursorManager.outline_uniform_buffer"),
+                    contents: bytemuck::bytes_of(&uniforms),
+                    usage: wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
+                });
+
         Self {
             gfx: gfx.clone(),
             rect_renderer,
@@ -90,6 +118,9 @@ impl CursorManager {
             screen_vertex_shader,
             outline_render_pipeline,
             outline_bind_group_layout,
+            outline_depth_sampler,
+            outline_uniform_buffer,
+            uniforms,
             current_state: CursorState::Normal,
             place_orientation: Direction::North,
         }
@@ -173,11 +204,6 @@ impl CursorManager {
         self.rect_renderer
             .draw(viewport, encoder, frame_view, depth_view);
 
-        let outline_depth_sampler = self.gfx.device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("CursorManager.outline_depth_sampler"),
-            ..Default::default()
-        });
-
         let outline_bind_group = self
             .gfx
             .device
@@ -187,11 +213,15 @@ impl CursorManager {
                 entries: &[
                     wgpu::BindGroupEntry {
                         binding: 0,
-                        resource: wgpu::BindingResource::Sampler(&outline_depth_sampler),
+                        resource: wgpu::BindingResource::Sampler(&self.outline_depth_sampler),
                     },
                     wgpu::BindGroupEntry {
                         binding: 1,
                         resource: wgpu::BindingResource::TextureView(depth_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: self.outline_uniform_buffer.as_entire_binding(),
                     },
                 ],
             });
@@ -288,6 +318,11 @@ impl CursorManager {
         self.place_orientation = direction;
     }
 
+    pub fn set_outline_color(&mut self, color: Vec3) {
+        self.uniforms.outline_color = color.into();
+        self.update_uniform_buffer();
+    }
+
     fn replace(&mut self, new_state: CursorState) {
         match &self.current_state {
             CursorState::Normal => {}
@@ -305,6 +340,14 @@ impl CursorManager {
         }
         self.current_state = new_state;
     }
+
+    fn update_uniform_buffer(&self) {
+        self.gfx.queue.write_buffer(
+            &self.outline_uniform_buffer,
+            0,
+            bytemuck::bytes_of(&self.uniforms),
+        );
+    }
 }
 
 pub enum CursorState {
@@ -321,7 +364,7 @@ pub enum CursorState {
     },
 }
 
-pub enum Sprite {
+enum Sprite {
     Pin {
         pin: rect::Handle,
     },
@@ -338,7 +381,7 @@ pub enum Sprite {
 }
 
 impl Sprite {
-    pub fn new(ty: ComponentType, renderer: &mut RectRenderer) -> Self {
+    fn new(ty: ComponentType, renderer: &mut RectRenderer) -> Self {
         match ty {
             ComponentType::Pin => Self::Pin {
                 pin: renderer.insert(&Default::default()),
@@ -356,7 +399,7 @@ impl Sprite {
         }
     }
 
-    pub fn component_type(&self) -> ComponentType {
+    fn component_type(&self) -> ComponentType {
         match self {
             Self::Pin { .. } => ComponentType::Pin,
             Self::Flip { .. } => ComponentType::Flip,
@@ -364,7 +407,7 @@ impl Sprite {
         }
     }
 
-    pub fn remove(&self, renderer: &mut RectRenderer) {
+    fn remove(&self, renderer: &mut RectRenderer) {
         match self {
             Self::Pin { pin } => {
                 renderer.remove(&pin);
@@ -390,7 +433,7 @@ impl Sprite {
         }
     }
 
-    pub fn update(&self, position: IVec2, orientation: Direction, renderer: &mut RectRenderer) {
+    fn update(&self, position: IVec2, orientation: Direction, renderer: &mut RectRenderer) {
         match self {
             Self::Pin { pin } => {
                 renderer.update(
@@ -451,6 +494,20 @@ impl Sprite {
                     .into(),
                 );
             }
+        }
+    }
+}
+
+#[derive(Clone, Copy, Pod, Zeroable)]
+#[repr(C)]
+struct Uniforms {
+    outline_color: [f32; 3],
+}
+
+impl Default for Uniforms {
+    fn default() -> Self {
+        Self {
+            outline_color: [0.0, 0.0, 1.0],
         }
     }
 }

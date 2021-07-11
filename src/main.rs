@@ -18,7 +18,7 @@ use crate::direction::Direction;
 use crate::viewport::Viewport;
 use anyhow::Context;
 use futures_executor::block_on;
-use glam::Vec2;
+use glam::{Vec2, Vec3};
 use std::sync::Arc;
 use std::time::Instant;
 use wgpu_glyph::ab_glyph::FontArc;
@@ -305,6 +305,31 @@ impl State {
 
         self.cursor_manager.update(&mut self.viewport);
         self.viewport.update(dt);
+
+        let cursor_pos = self.viewport.cursor().tile();
+
+        let valid_place = match self.cursor_manager.current_state() {
+            &CursorState::PlaceWire {
+                start_position,
+                end_position,
+                ..
+            } => self.circuit.can_place_wire(start_position, end_position),
+            _ => match self.cursor_manager.place_type() {
+                ComponentType::Pin => true,
+                other_type => self.circuit.can_place_component(
+                    other_type,
+                    cursor_pos,
+                    self.cursor_manager.place_orientation(),
+                ),
+            },
+        };
+        if valid_place {
+            self.cursor_manager
+                .set_outline_color(Vec3::new(0.0, 0.0, 1.0));
+        } else {
+            self.cursor_manager
+                .set_outline_color(Vec3::new(1.0, 0.0, 0.0));
+        }
     }
 
     fn redraw(&mut self) -> anyhow::Result<()> {
