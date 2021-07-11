@@ -110,6 +110,11 @@ impl Simulation {
         self.was_powered[id]
     }
 
+    pub fn set_powered(&mut self, id: u32, powered: bool) {
+        let id = cluster_array_index(id);
+        self.is_powered[id] = powered;
+    }
+
     pub fn tick(&mut self) {
         std::mem::swap(&mut self.is_powered, &mut self.was_powered);
 

@@ -709,11 +709,17 @@ impl Circuit {
                 }
             }
         }
+
+        self.simulation.set_powered(
+            into_index,
+            self.simulation.is_powered(into_index) || self.simulation.is_powered(from_index),
+        );
         self.simulation.free_cluster(from_index);
     }
 
     fn split_clusters(&mut self, keep: GraphNode, split: GraphNode) {
-        if self.cluster_id(&keep) != self.cluster_id(&split) {
+        let keep_index = self.cluster_id(&keep);
+        if keep_index != self.cluster_id(&split) {
             return;
         }
         let split_cluster = self.cluster_of(&split);
@@ -721,6 +727,9 @@ impl Circuit {
             return;
         }
         let split_index = self.simulation.alloc_cluster();
+        self.simulation
+            .set_powered(split_index, self.simulation.is_powered(keep_index));
+
         for node in &split_cluster {
             match node {
                 &GraphNode::Wire(handle) => {
