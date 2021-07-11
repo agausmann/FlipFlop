@@ -45,6 +45,10 @@ impl Circuit {
         frame_view: &wgpu::TextureView,
         depth_view: &wgpu::TextureView,
     ) {
+        // XXX
+        self.simulation.tick();
+        self.rect_renderer.update_cluster_states(&self.simulation);
+
         self.board_renderer
             .draw(viewport, encoder, frame_view, depth_view);
         self.rect_renderer

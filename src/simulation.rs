@@ -31,6 +31,10 @@ impl Simulation {
         }
     }
 
+    pub fn num_clusters(&self) -> u32 {
+        self.num_clusters
+    }
+
     /// Allocates a new cluster ID that is not currently being used.
     pub fn alloc_cluster(&mut self) -> u32 {
         if let Some(id) = self.free_clusters.pop() {

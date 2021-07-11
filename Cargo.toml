@@ -8,6 +8,7 @@ edition = "2018"
 
 [dependencies]
 anyhow = "1.0"
+bitvec = "0.22"
 bytemuck = "1.5"
 env_logger = "0.8"
 futures-executor = "0.3"

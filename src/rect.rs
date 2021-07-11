@@ -1,7 +1,9 @@
 use crate::direction::Direction;
 use crate::instance::InstanceManager;
+use crate::simulation::Simulation;
 use crate::viewport::Viewport;
 use crate::GraphicsContext;
+use bitvec::prelude::{BitVec, Lsb0};
 use bytemuck::{Pod, Zeroable};
 use glam::{IVec2, Vec2, Vec4};
 use once_cell::sync::Lazy;
@@ -90,6 +92,7 @@ const VERTICES: &[Vertex] = &[
 const INDICES: &[u16] = &[0, 1, 2, 0, 2, 3];
 
 pub struct RectRenderer {
+    gfx: GraphicsContext,
     render_pipeline: wgpu::RenderPipeline,
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
@@ -189,13 +192,12 @@ impl RectRenderer {
                 contents: bytemuck::cast_slice(INDICES),
                 usage: wgpu::BufferUsage::INDEX,
             });
-        let cluster_state_buffer =
-            gfx.device
-                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("RectRenderer.cluster_state_buffer"),
-                    contents: bytemuck::bytes_of(&[0x00_u32]),
-                    usage: wgpu::BufferUsage::STORAGE,
-                });
+        let cluster_state_buffer = gfx.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("RectRenderer.cluster_state_buffer"),
+            size: 1 * 1024 * 1024, //TODO dynamically-sized
+            usage: wgpu::BufferUsage::STORAGE | wgpu::BufferUsage::COPY_DST,
+            mapped_at_creation: false,
+        });
 
         let bind_group = gfx.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("RectRenderer.bind_group"),
@@ -209,6 +211,7 @@ impl RectRenderer {
         let instances = InstanceManager::new(gfx);
 
         Self {
+            gfx: gfx.clone(),
             render_pipeline,
             vertex_buffer,
             index_buffer,
@@ -228,6 +231,21 @@ impl RectRenderer {
 
     pub fn remove(&mut self, handle: &Handle) -> bool {
         self.instances.remove(handle)
+    }
+
+    pub fn update_cluster_states(&mut self, simulation: &Simulation) {
+        let mut state_buffer: BitVec<Lsb0, u32> =
+            BitVec::with_capacity(simulation.num_clusters() as usize * 2);
+        for index in 0..simulation.num_clusters() {
+            state_buffer.push(simulation.is_powered(index));
+            state_buffer.push(simulation.was_powered(index));
+        }
+
+        self.gfx.queue.write_buffer(
+            &self.cluster_state_buffer,
+            0,
+            bytemuck::cast_slice(state_buffer.as_raw_slice()),
+        );
     }
 
     pub fn draw(
@@ -285,7 +303,7 @@ pub struct Rect {
     pub color: Color,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub enum Color {
     Fixed(Vec4),
     Wire {
@@ -310,14 +328,15 @@ impl Color {
     }
 
     fn cluster_index(&self) -> u32 {
-        match self {
+        let idx = match self {
             &Self::Wire {
                 cluster_index,
                 delayed,
                 inverted,
             } => (cluster_index << 2) | ((delayed as u32) << 1) | (inverted as u32),
             _ => 0xffffffff,
-        }
+        };
+        idx
     }
 }
 
