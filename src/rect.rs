@@ -349,13 +349,13 @@ const OUTPUT_HEIGHT: f32 = 2.0 / 16.0;
 const SIDE_PIN_DISTANCE: f32 = 2.0 / 16.0;
 const SIDE_PIN_HEIGHT: f32 = 4.0 / 16.0;
 
-const H_WIRE_Z_INDEX: u8 = 1;
-const V_WIRE_Z_INDEX: u8 = 3;
-const CROSSOVER_Z_INDEX: u8 = 2;
-const PIN_Z_INDEX: u8 = 4;
-const BODY_Z_INDEX: u8 = 0;
-const OUTPUT_Z_INDEX: u8 = 4;
-const SIDE_PIN_Z_INDEX: u8 = 4;
+const H_WIRE_Z_INDEX: u8 = 2;
+const V_WIRE_Z_INDEX: u8 = 4;
+const CROSSOVER_Z_INDEX: u8 = 3;
+const PIN_Z_INDEX: u8 = 5;
+const BODY_Z_INDEX: u8 = 1;
+const OUTPUT_Z_INDEX: u8 = 5;
+const SIDE_PIN_Z_INDEX: u8 = 5;
 
 #[derive(Clone, Copy)]
 pub enum WireConnection {

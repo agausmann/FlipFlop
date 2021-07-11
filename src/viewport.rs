@@ -126,7 +126,7 @@ impl Viewport {
                     label: Some("Viewport.bind_group_layout"),
                     entries: &[wgpu::BindGroupLayoutEntry {
                         binding: 0,
-                        visibility: wgpu::ShaderStage::VERTEX,
+                        visibility: wgpu::ShaderStage::VERTEX | wgpu::ShaderStage::FRAGMENT,
                         ty: wgpu::BindingType::Buffer {
                             ty: wgpu::BufferBindingType::Uniform,
                             has_dynamic_offset: false,
@@ -194,12 +194,14 @@ impl Viewport {
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 struct Uniforms {
     view_proj: [[f32; 4]; 4],
+    view_size: [f32; 2],
 }
 
 impl Uniforms {
     fn default() -> Self {
         Self {
             view_proj: Mat4::IDENTITY.to_cols_array_2d(),
+            view_size: [1.0, 1.0],
         }
     }
 
@@ -214,6 +216,7 @@ impl Uniforms {
             * Mat4::from_translation(-camera.pan.extend(0.0));
         Self {
             view_proj: (proj * view).to_cols_array_2d(),
+            view_size: size.into(),
         }
     }
 }

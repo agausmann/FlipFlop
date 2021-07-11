@@ -6,6 +6,7 @@ pub mod depot;
 pub mod direction;
 pub mod instance;
 pub mod rect;
+pub mod screen_vertex;
 pub mod simulation;
 pub mod viewport;
 
