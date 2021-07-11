@@ -1,23 +1,26 @@
 use crate::circuit::ComponentType;
 use crate::direction::Direction;
-use crate::rect::{self, RectRenderer};
+use crate::rect::{self, Color, RectRenderer};
 use crate::viewport::Viewport;
 use crate::GraphicsContext;
-use glam::{IVec2, Vec2};
+use glam::{IVec2, Vec2, Vec4};
 
 pub struct CursorManager {
     rect_renderer: RectRenderer,
     current_state: CursorState,
-    place_type: ComponentType,
+    place_sprite: Sprite,
     place_orientation: Direction,
 }
 
 impl CursorManager {
     pub fn new(gfx: &GraphicsContext, viewport: &Viewport) -> Self {
+        let mut rect_renderer = RectRenderer::new(gfx, viewport);
+        let place_sprite = Sprite::new(ComponentType::Pin, &mut rect_renderer);
+
         Self {
-            rect_renderer: RectRenderer::new(gfx, viewport),
+            rect_renderer,
+            place_sprite,
             current_state: CursorState::Normal,
-            place_type: ComponentType::Pin,
             place_orientation: Direction::North,
         }
     }
@@ -27,6 +30,11 @@ impl CursorManager {
     }
 
     pub fn update(&mut self, viewport: &mut Viewport) {
+        self.place_sprite.update(
+            viewport.cursor().tile(),
+            self.place_orientation,
+            &mut self.rect_renderer,
+        );
         match &mut self.current_state {
             CursorState::Normal => {}
             CursorState::Pan { last_position } => {
@@ -142,7 +150,7 @@ impl CursorManager {
     }
 
     pub fn place_type(&self) -> ComponentType {
-        self.place_type
+        self.place_sprite.component_type()
     }
 
     pub fn place_orientation(&self) -> Direction {
@@ -150,7 +158,10 @@ impl CursorManager {
     }
 
     pub fn set_place_type(&mut self, ty: ComponentType) {
-        self.place_type = ty;
+        if ty != self.place_sprite.component_type() {
+            self.place_sprite.remove(&mut self.rect_renderer);
+            self.place_sprite = Sprite::new(ty, &mut self.rect_renderer);
+        }
     }
 
     pub fn set_place_orientation(&mut self, direction: Direction) {
@@ -188,4 +199,138 @@ pub enum CursorState {
         end_pin: rect::Handle,
         wire: rect::Handle,
     },
+}
+
+pub enum Sprite {
+    Pin {
+        pin: rect::Handle,
+    },
+    Flip {
+        input: rect::Handle,
+        body: rect::Handle,
+        output: rect::Handle,
+    },
+    Flop {
+        input: rect::Handle,
+        body: rect::Handle,
+        output: rect::Handle,
+    },
+}
+
+impl Sprite {
+    pub fn new(ty: ComponentType, renderer: &mut RectRenderer) -> Self {
+        match ty {
+            ComponentType::Pin => Self::Pin {
+                pin: renderer.insert(&Default::default()),
+            },
+            ComponentType::Flip => Self::Flip {
+                input: renderer.insert(&Default::default()),
+                body: renderer.insert(&Default::default()),
+                output: renderer.insert(&Default::default()),
+            },
+            ComponentType::Flop => Self::Flop {
+                input: renderer.insert(&Default::default()),
+                body: renderer.insert(&Default::default()),
+                output: renderer.insert(&Default::default()),
+            },
+        }
+    }
+
+    pub fn component_type(&self) -> ComponentType {
+        match self {
+            Self::Pin { .. } => ComponentType::Pin,
+            Self::Flip { .. } => ComponentType::Flip,
+            Self::Flop { .. } => ComponentType::Flop,
+        }
+    }
+
+    pub fn remove(&self, renderer: &mut RectRenderer) {
+        match self {
+            Self::Pin { pin } => {
+                renderer.remove(&pin);
+            }
+            Self::Flip {
+                input,
+                body,
+                output,
+            } => {
+                renderer.remove(&input);
+                renderer.remove(&body);
+                renderer.remove(&output);
+            }
+            Self::Flop {
+                input,
+                body,
+                output,
+            } => {
+                renderer.remove(&input);
+                renderer.remove(&body);
+                renderer.remove(&output);
+            }
+        }
+    }
+
+    pub fn update(&self, position: IVec2, orientation: Direction, renderer: &mut RectRenderer) {
+        match self {
+            Self::Pin { pin } => {
+                renderer.update(
+                    pin,
+                    &rect::Pin {
+                        position,
+                        color: Color::Fixed(Vec4::new(0.0, 0.0, 0.0, 1.0)),
+                    }
+                    .into(),
+                );
+            }
+            Self::Flip {
+                input,
+                body,
+                output,
+            } => {
+                renderer.update(
+                    input,
+                    &rect::Pin {
+                        position,
+                        color: Color::Fixed(Vec4::new(0.0, 0.0, 0.0, 1.0)),
+                    }
+                    .into(),
+                );
+                renderer.update(body, &rect::Body { position }.into());
+                renderer.update(
+                    output,
+                    &rect::Output {
+                        position,
+                        orientation,
+                        color: Color::Fixed(Vec4::new(1.0, 0.0, 0.0, 1.0)),
+                    }
+                    .into(),
+                );
+            }
+            Self::Flop {
+                input,
+                body,
+                output,
+            } => {
+                renderer.update(
+                    input,
+                    &rect::SidePin {
+                        position,
+                        orientation: orientation.opposite(),
+                        color: Color::Fixed(Vec4::new(0.0, 0.0, 0.0, 1.0)),
+                    }
+                    .into(),
+                );
+                renderer.update(body, &rect::Body { position }.into());
+                renderer.update(
+                    output,
+                    &rect::Output {
+                        position,
+                        orientation,
+                        color: Color::Fixed(Vec4::new(0.0, 0.0, 0.0, 1.0)),
+                    }
+                    .into(),
+                );
+            }
+        }
+    }
 }
