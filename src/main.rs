@@ -29,6 +29,20 @@ use winit::event::{
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::{CursorIcon, Window, WindowBuilder};
 
+const HELP_TEXT: &str = "\
+Controls (press F1 to show/hide):
+Camera Pan - WASD or arrow keys
+    or middle click and drag
+Camera Zoom - Scroll or PgUp/PgDn
+Place Component - Left click
+Place Wire - Left click and drag
+Remove Component/Wire - Right click
+Rotate Component - R
+1 - Pin/Wire
+2 - Flip
+3 - Flop
+";
+
 pub type GraphicsContext = Arc<GraphicsContextInner>;
 
 pub struct GraphicsContextInner {
@@ -94,6 +108,7 @@ struct State {
     last_update: Instant,
     circuit: Circuit,
     cursor_manager: CursorManager,
+    draw_help: bool,
 }
 
 fn create_swap_chain(gfx: &GraphicsContext) -> wgpu::SwapChain {
@@ -158,6 +173,7 @@ impl State {
             last_update: Instant::now(),
             circuit,
             cursor_manager,
+            draw_help: true,
         })
     }
 
@@ -290,6 +306,9 @@ impl State {
                                 self.cursor_manager.place_orientation().right(),
                             );
                         }
+                        VirtualKeyCode::F1 if pressed => {
+                            self.draw_help = !self.draw_help;
+                        }
                         _ => {}
                     }
                 }
@@ -370,12 +389,22 @@ impl State {
         let size = self.gfx.window.inner_size();
         self.glyph_brush.queue(Section {
             screen_position: (0.0, 0.0),
-            bounds: (size.width as f32, size.height as f32),
+            bounds: (size.width as f32 / 2.0, size.height as f32),
             text: vec![Text::new(&self.debug_text())
                 .with_color([1.0, 1.0, 1.0, 1.0])
-                .with_scale(24.0)],
+                .with_scale(18.0)],
             ..Default::default()
         });
+        if self.draw_help {
+            self.glyph_brush.queue(Section {
+                screen_position: (size.width as f32 / 2.0, 0.0),
+                bounds: (size.width as f32 / 2.0, size.height as f32),
+                text: vec![Text::new(HELP_TEXT)
+                    .with_color([1.0, 1.0, 1.0, 1.0])
+                    .with_scale(18.0)],
+                ..Default::default()
+            });
+        }
         self.glyph_brush
             .draw_queued(
                 &self.gfx.device,
