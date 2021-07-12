@@ -70,7 +70,7 @@ impl Circuit {
         self.component(pos).map(|component| component.get_type())
     }
 
-    pub fn can_place_wire(&mut self, start: IVec2, end: IVec2) -> bool {
+    pub fn can_place_wire(&self, start: IVec2, end: IVec2) -> bool {
         let wire_direction = wire_direction(start, end);
 
         // All the tiles on the wire's path must allow the wire.
@@ -279,6 +279,11 @@ impl Circuit {
                 }
             }
         }
+    }
+
+    pub fn wire_connection(&self, position: IVec2, direction: Direction) -> Option<WireConnection> {
+        self.component(position)
+            .map(|component| component.connection_type(direction))
     }
 
     fn insert_component(
@@ -1231,7 +1236,7 @@ enum GraphNode {
     Component(depot::Handle, Direction),
 }
 
-fn wire_direction(start: IVec2, end: IVec2) -> Direction {
+pub fn wire_direction(start: IVec2, end: IVec2) -> Direction {
     if start.x == end.x {
         if start.y < end.y {
             Direction::North

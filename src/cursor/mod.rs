@@ -1,7 +1,7 @@
 mod outline;
 
 use self::outline::OutlineRenderer;
-use crate::circuit::ComponentType;
+use crate::circuit::{wire_direction, Circuit, ComponentType};
 use crate::direction::Direction;
 use crate::rect::{self, Color, RectRenderer};
 use crate::viewport::Viewport;
@@ -35,9 +35,12 @@ impl CursorManager {
         &self.current_state
     }
 
-    pub fn update(&mut self, viewport: &mut Viewport) {
-        self.place_sprite
-            .update(viewport.cursor().tile(), self.place_orientation);
+    pub fn update(&mut self, viewport: &mut Viewport, circuit: &Circuit) {
+        self.place_sprite.update(
+            viewport.cursor().tile(),
+            self.place_orientation,
+            &self.current_state,
+        );
         match &mut self.current_state {
             CursorState::Normal => {}
             CursorState::Pan { last_position } => {
@@ -65,32 +68,68 @@ impl CursorManager {
                 }
                 *end_position = *start_position + size;
 
-                start_pin.set(
-                    &rect::Pin {
-                        position: *start_position,
-                        color: Default::default(),
-                    }
-                    .into(),
-                );
-                end_pin.set(
-                    &rect::Pin {
-                        position: *end_position,
-                        color: Default::default(),
-                    }
-                    .into(),
-                );
+                if circuit.component_at(*start_position).is_some() {
+                    start_pin.set(&Default::default());
+                } else {
+                    start_pin.set(
+                        &rect::Pin {
+                            position: *start_position,
+                            color: Default::default(),
+                        }
+                        .into(),
+                    );
+                }
+                if circuit.component_at(*end_position).is_some() {
+                    end_pin.set(&Default::default());
+                } else {
+                    end_pin.set(
+                        &rect::Pin {
+                            position: *end_position,
+                            color: Default::default(),
+                        }
+                        .into(),
+                    );
+                }
+                let wire_direction = wire_direction(*start_position, *end_position);
                 wire.set(
                     &rect::Wire {
                         start: *start_position,
                         end: *end_position,
-                        start_connection: Default::default(),
-                        end_connection: Default::default(),
+                        start_connection: circuit
+                            .wire_connection(*start_position, wire_direction)
+                            .unwrap_or_default(),
+                        end_connection: circuit
+                            .wire_connection(*end_position, wire_direction.opposite())
+                            .unwrap_or_default(),
                         color: Default::default(),
                     }
                     .into(),
                 );
             }
         }
+
+        let valid_place = match &self.current_state {
+            &CursorState::PlaceWire {
+                start_position,
+                end_position,
+                ..
+            } => circuit.can_place_wire(start_position, end_position),
+            _ => match self.place_type() {
+                ComponentType::Pin => true,
+                other_type => circuit.can_place_component(
+                    other_type,
+                    viewport.cursor().tile(),
+                    self.place_orientation,
+                ),
+            },
+        };
+
+        let outline_color = if valid_place {
+            Vec3::new(0.0, 0.0, 1.0)
+        } else {
+            Vec3::new(1.0, 0.0, 0.0)
+        };
+        self.outline_renderer.set_outline_color(outline_color);
     }
 
     pub fn draw(
@@ -169,10 +208,6 @@ impl CursorManager {
         self.place_orientation = direction;
     }
 
-    pub fn set_outline_color(&mut self, color: Vec3) {
-        self.outline_renderer.set_outline_color(color);
-    }
-
     fn replace(&mut self, new_state: CursorState) {
         self.current_state = new_state;
     }
@@ -235,61 +270,82 @@ impl Sprite {
         }
     }
 
-    fn update(&self, position: IVec2, orientation: Direction) {
+    fn update(&self, position: IVec2, orientation: Direction, current_state: &CursorState) {
+        let visible = match current_state {
+            CursorState::Normal => true,
+            CursorState::Pan { .. } => false,
+            CursorState::PlaceWire { .. } => false,
+        };
         match self {
             Self::Pin { pin } => {
-                pin.set(
-                    &rect::Pin {
-                        position,
-                        color: Color::Fixed(Vec4::new(0.0, 0.0, 0.0, 1.0)),
-                    }
-                    .into(),
-                );
+                if visible {
+                    pin.set(
+                        &rect::Pin {
+                            position,
+                            color: Color::Fixed(Vec4::new(0.0, 0.0, 0.0, 1.0)),
+                        }
+                        .into(),
+                    );
+                } else {
+                    pin.set(&Default::default());
+                }
             }
             Self::Flip {
                 input,
                 body,
                 output,
             } => {
-                input.set(
-                    &rect::Pin {
-                        position,
-                        color: Color::Fixed(Vec4::new(0.0, 0.0, 0.0, 1.0)),
-                    }
-                    .into(),
-                );
-                body.set(&rect::Body { position }.into());
-                output.set(
-                    &rect::Output {
-                        position,
-                        orientation,
-                        color: Color::Fixed(Vec4::new(1.0, 0.0, 0.0, 1.0)),
-                    }
-                    .into(),
-                );
+                if visible {
+                    input.set(
+                        &rect::Pin {
+                            position,
+                            color: Color::Fixed(Vec4::new(0.0, 0.0, 0.0, 1.0)),
+                        }
+                        .into(),
+                    );
+                    body.set(&rect::Body { position }.into());
+                    output.set(
+                        &rect::Output {
+                            position,
+                            orientation,
+                            color: Color::Fixed(Vec4::new(1.0, 0.0, 0.0, 1.0)),
+                        }
+                        .into(),
+                    );
+                } else {
+                    input.set(&Default::default());
+                    body.set(&Default::default());
+                    output.set(&Default::default());
+                }
             }
             Self::Flop {
                 input,
                 body,
                 output,
             } => {
-                input.set(
-                    &rect::SidePin {
-                        position,
-                        orientation: orientation.opposite(),
-                        color: Color::Fixed(Vec4::new(0.0, 0.0, 0.0, 1.0)),
-                    }
-                    .into(),
-                );
-                body.set(&rect::Body { position }.into());
-                output.set(
-                    &rect::Output {
-                        position,
-                        orientation,
-                        color: Color::Fixed(Vec4::new(0.0, 0.0, 0.0, 1.0)),
-                    }
-                    .into(),
-                );
+                if visible {
+                    input.set(
+                        &rect::SidePin {
+                            position,
+                            orientation: orientation.opposite(),
+                            color: Color::Fixed(Vec4::new(0.0, 0.0, 0.0, 1.0)),
+                        }
+                        .into(),
+                    );
+                    body.set(&rect::Body { position }.into());
+                    output.set(
+                        &rect::Output {
+                            position,
+                            orientation,
+                            color: Color::Fixed(Vec4::new(0.0, 0.0, 0.0, 1.0)),
+                        }
+                        .into(),
+                    );
+                } else {
+                    input.set(&Default::default());
+                    body.set(&Default::default());
+                    output.set(&Default::default());
+                }
             }
         }
     }
