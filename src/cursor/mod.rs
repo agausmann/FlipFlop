@@ -1,126 +1,31 @@
+mod outline;
+
+use self::outline::OutlineRenderer;
 use crate::circuit::ComponentType;
 use crate::direction::Direction;
 use crate::rect::{self, Color, RectRenderer};
-use crate::screen_vertex::ScreenVertexShader;
 use crate::viewport::Viewport;
 use crate::GraphicsContext;
-use bytemuck::{Pod, Zeroable};
 use glam::{IVec2, Vec2, Vec3, Vec4};
-use wgpu::util::DeviceExt;
 
 pub struct CursorManager {
-    gfx: GraphicsContext,
     rect_renderer: RectRenderer,
+    outline_renderer: OutlineRenderer,
     current_state: CursorState,
     place_sprite: Sprite,
     place_orientation: Direction,
-
-    screen_vertex_shader: &'static ScreenVertexShader,
-    outline_render_pipeline: wgpu::RenderPipeline,
-    outline_bind_group_layout: wgpu::BindGroupLayout,
-    outline_depth_sampler: wgpu::Sampler,
-    outline_uniform_buffer: wgpu::Buffer,
-    uniforms: Uniforms,
 }
 
 impl CursorManager {
     pub fn new(gfx: &GraphicsContext, viewport: &Viewport) -> Self {
         let mut rect_renderer = RectRenderer::new(gfx, viewport);
         let place_sprite = Sprite::new(ComponentType::Pin, &mut rect_renderer);
-
-        let screen_vertex_shader = ScreenVertexShader::get(gfx);
-        let outline_bind_group_layout =
-            gfx.device
-                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                    label: Some("CursorManager.outline_bind_group_layout"),
-                    entries: &[
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 0,
-                            visibility: wgpu::ShaderStage::FRAGMENT,
-                            ty: wgpu::BindingType::Sampler {
-                                filtering: false,
-                                comparison: false,
-                            },
-                            count: None,
-                        },
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 1,
-                            visibility: wgpu::ShaderStage::FRAGMENT,
-                            ty: wgpu::BindingType::Texture {
-                                sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                                view_dimension: wgpu::TextureViewDimension::D2,
-                                multisampled: false,
-                            },
-                            count: None,
-                        },
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 2,
-                            visibility: wgpu::ShaderStage::FRAGMENT,
-                            ty: wgpu::BindingType::Buffer {
-                                ty: wgpu::BufferBindingType::Uniform,
-                                has_dynamic_offset: false,
-                                min_binding_size: None,
-                            },
-                            count: None,
-                        },
-                    ],
-                });
-        let outline_pipeline_layout =
-            gfx.device
-                .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                    label: Some("CursorManager.outline_pipeline_layout"),
-                    bind_group_layouts: &[viewport.bind_group_layout(), &outline_bind_group_layout],
-                    push_constant_ranges: &[],
-                });
-        let outline_fragment_module =
-            gfx.device
-                .create_shader_module(&wgpu::include_spirv!(concat!(
-                    env!("OUT_DIR"),
-                    "/shaders/cursor_outline.frag.spv"
-                )));
-        let outline_render_pipeline =
-            gfx.device
-                .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                    label: Some("CursorManager.outline_render_pipeline"),
-                    layout: Some(&outline_pipeline_layout),
-                    vertex: screen_vertex_shader.vertex_state(),
-                    primitive: screen_vertex_shader.primitive_state(),
-                    depth_stencil: None,
-                    multisample: Default::default(),
-                    fragment: Some(wgpu::FragmentState {
-                        module: &outline_fragment_module,
-                        entry_point: "main",
-                        targets: &[wgpu::ColorTargetState {
-                            format: gfx.render_format,
-                            blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                            write_mask: Default::default(),
-                        }],
-                    }),
-                });
-
-        let outline_depth_sampler = gfx.device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("CursorManager.outline_depth_sampler"),
-            ..Default::default()
-        });
-        let uniforms = Uniforms::default();
-        let outline_uniform_buffer =
-            gfx.device
-                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("CursorManager.outline_uniform_buffer"),
-                    contents: bytemuck::bytes_of(&uniforms),
-                    usage: wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
-                });
+        let outline_renderer = OutlineRenderer::new(gfx, viewport);
 
         Self {
-            gfx: gfx.clone(),
             rect_renderer,
             place_sprite,
-            screen_vertex_shader,
-            outline_render_pipeline,
-            outline_bind_group_layout,
-            outline_depth_sampler,
-            outline_uniform_buffer,
-            uniforms,
+            outline_renderer,
             current_state: CursorState::Normal,
             place_orientation: Direction::North,
         }
@@ -203,55 +108,8 @@ impl CursorManager {
     ) {
         self.rect_renderer
             .draw(viewport, encoder, frame_view, depth_view);
-
-        let outline_bind_group = self
-            .gfx
-            .device
-            .create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("CursorManager.outline_bind_group"),
-                layout: &self.outline_bind_group_layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::Sampler(&self.outline_depth_sampler),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::TextureView(depth_view),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 2,
-                        resource: self.outline_uniform_buffer.as_entire_binding(),
-                    },
-                ],
-            });
-
-        let mut outline_render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("CursorManager.outline_render_pass"),
-            color_attachments: &[wgpu::RenderPassColorAttachment {
-                view: &frame_view,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Load,
-                    store: true,
-                },
-            }],
-            depth_stencil_attachment: None,
-        });
-
-        outline_render_pass.set_pipeline(&self.outline_render_pipeline);
-        outline_render_pass.set_vertex_buffer(0, self.screen_vertex_shader.vertex_buffer.slice(..));
-        outline_render_pass.set_index_buffer(
-            self.screen_vertex_shader.index_buffer.slice(..),
-            self.screen_vertex_shader.index_format(),
-        );
-        outline_render_pass.set_bind_group(0, viewport.bind_group(), &[]);
-        outline_render_pass.set_bind_group(1, &outline_bind_group, &[]);
-        outline_render_pass.draw_indexed(
-            self.screen_vertex_shader.indices(),
-            self.screen_vertex_shader.base_vertex(),
-            self.screen_vertex_shader.instances(),
-        );
+        self.outline_renderer
+            .draw(viewport, encoder, frame_view, depth_view);
     }
 
     pub fn start_pan(&mut self, viewport: &Viewport) {
@@ -319,8 +177,7 @@ impl CursorManager {
     }
 
     pub fn set_outline_color(&mut self, color: Vec3) {
-        self.uniforms.outline_color = color.into();
-        self.update_uniform_buffer();
+        self.outline_renderer.set_outline_color(color);
     }
 
     fn replace(&mut self, new_state: CursorState) {
@@ -339,14 +196,6 @@ impl CursorManager {
             }
         }
         self.current_state = new_state;
-    }
-
-    fn update_uniform_buffer(&self) {
-        self.gfx.queue.write_buffer(
-            &self.outline_uniform_buffer,
-            0,
-            bytemuck::bytes_of(&self.uniforms),
-        );
     }
 }
 
@@ -494,20 +343,6 @@ impl Sprite {
                     .into(),
                 );
             }
-        }
-    }
-}
-
-#[derive(Clone, Copy, Pod, Zeroable)]
-#[repr(C)]
-struct Uniforms {
-    outline_color: [f32; 3],
-}
-
-impl Default for Uniforms {
-    fn default() -> Self {
-        Self {
-            outline_color: [0.0, 0.0, 1.0],
         }
     }
 }
