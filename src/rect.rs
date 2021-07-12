@@ -10,7 +10,15 @@ use once_cell::sync::Lazy;
 use std::convert::TryInto;
 use wgpu::util::DeviceExt;
 
-pub use crate::instance::Handle;
+pub struct Handle {
+    inner: crate::instance::Handle<Instance>,
+}
+
+impl Handle {
+    pub fn set(&self, rect: &Rect) {
+        self.inner.set(Instance::new(rect));
+    }
+}
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -222,15 +230,8 @@ impl RectRenderer {
     }
 
     pub fn insert(&mut self, rect: &Rect) -> Handle {
-        self.instances.insert(Instance::new(rect))
-    }
-
-    pub fn update(&mut self, handle: &Handle, rect: &Rect) {
-        self.instances.update(handle, Instance::new(rect));
-    }
-
-    pub fn remove(&mut self, handle: &Handle) -> bool {
-        self.instances.remove(handle)
+        let inner = self.instances.insert(Instance::new(rect));
+        Handle { inner }
     }
 
     pub fn update_cluster_states(&mut self, simulation: &Simulation) {

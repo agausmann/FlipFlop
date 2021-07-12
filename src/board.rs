@@ -8,7 +8,15 @@ use std::convert::TryInto;
 use std::num::NonZeroU32;
 use wgpu::util::DeviceExt;
 
-pub use crate::instance::Handle;
+pub struct Handle {
+    inner: crate::instance::Handle<Instance>,
+}
+
+impl Handle {
+    pub fn set(&self, board: &Board) {
+        self.inner.set(Instance::new(board));
+    }
+}
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -267,15 +275,8 @@ impl BoardRenderer {
     }
 
     pub fn insert(&mut self, board: &Board) -> Handle {
-        self.instances.insert(Instance::new(board))
-    }
-
-    pub fn update(&mut self, handle: &Handle, board: &Board) {
-        self.instances.update(handle, Instance::new(board));
-    }
-
-    pub fn remove(&mut self, handle: &Handle) -> bool {
-        self.instances.remove(handle)
+        let inner = self.instances.insert(Instance::new(board));
+        Handle { inner }
     }
 
     pub fn draw(

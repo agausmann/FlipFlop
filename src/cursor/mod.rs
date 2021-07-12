@@ -36,11 +36,8 @@ impl CursorManager {
     }
 
     pub fn update(&mut self, viewport: &mut Viewport) {
-        self.place_sprite.update(
-            viewport.cursor().tile(),
-            self.place_orientation,
-            &mut self.rect_renderer,
-        );
+        self.place_sprite
+            .update(viewport.cursor().tile(), self.place_orientation);
         match &mut self.current_state {
             CursorState::Normal => {}
             CursorState::Pan { last_position } => {
@@ -68,24 +65,21 @@ impl CursorManager {
                 }
                 *end_position = *start_position + size;
 
-                self.rect_renderer.update(
-                    start_pin,
+                start_pin.set(
                     &rect::Pin {
                         position: *start_position,
                         color: Default::default(),
                     }
                     .into(),
                 );
-                self.rect_renderer.update(
-                    end_pin,
+                end_pin.set(
                     &rect::Pin {
                         position: *end_position,
                         color: Default::default(),
                     }
                     .into(),
                 );
-                self.rect_renderer.update(
-                    wire,
+                wire.set(
                     &rect::Wire {
                         start: *start_position,
                         end: *end_position,
@@ -167,7 +161,6 @@ impl CursorManager {
 
     pub fn set_place_type(&mut self, ty: ComponentType) {
         if ty != self.place_sprite.component_type() {
-            self.place_sprite.remove(&mut self.rect_renderer);
             self.place_sprite = Sprite::new(ty, &mut self.rect_renderer);
         }
     }
@@ -181,20 +174,6 @@ impl CursorManager {
     }
 
     fn replace(&mut self, new_state: CursorState) {
-        match &self.current_state {
-            CursorState::Normal => {}
-            CursorState::Pan { .. } => {}
-            CursorState::PlaceWire {
-                start_pin,
-                end_pin,
-                wire,
-                ..
-            } => {
-                self.rect_renderer.remove(start_pin);
-                self.rect_renderer.remove(end_pin);
-                self.rect_renderer.remove(wire);
-            }
-        }
         self.current_state = new_state;
     }
 }
@@ -256,37 +235,10 @@ impl Sprite {
         }
     }
 
-    fn remove(&self, renderer: &mut RectRenderer) {
+    fn update(&self, position: IVec2, orientation: Direction) {
         match self {
             Self::Pin { pin } => {
-                renderer.remove(&pin);
-            }
-            Self::Flip {
-                input,
-                body,
-                output,
-            } => {
-                renderer.remove(&input);
-                renderer.remove(&body);
-                renderer.remove(&output);
-            }
-            Self::Flop {
-                input,
-                body,
-                output,
-            } => {
-                renderer.remove(&input);
-                renderer.remove(&body);
-                renderer.remove(&output);
-            }
-        }
-    }
-
-    fn update(&self, position: IVec2, orientation: Direction, renderer: &mut RectRenderer) {
-        match self {
-            Self::Pin { pin } => {
-                renderer.update(
-                    pin,
+                pin.set(
                     &rect::Pin {
                         position,
                         color: Color::Fixed(Vec4::new(0.0, 0.0, 0.0, 1.0)),
@@ -299,17 +251,15 @@ impl Sprite {
                 body,
                 output,
             } => {
-                renderer.update(
-                    input,
+                input.set(
                     &rect::Pin {
                         position,
                         color: Color::Fixed(Vec4::new(0.0, 0.0, 0.0, 1.0)),
                     }
                     .into(),
                 );
-                renderer.update(body, &rect::Body { position }.into());
-                renderer.update(
-                    output,
+                body.set(&rect::Body { position }.into());
+                output.set(
                     &rect::Output {
                         position,
                         orientation,
@@ -323,8 +273,7 @@ impl Sprite {
                 body,
                 output,
             } => {
-                renderer.update(
-                    input,
+                input.set(
                     &rect::SidePin {
                         position,
                         orientation: orientation.opposite(),
@@ -332,9 +281,8 @@ impl Sprite {
                     }
                     .into(),
                 );
-                renderer.update(body, &rect::Body { position }.into());
-                renderer.update(
-                    output,
+                body.set(&rect::Body { position }.into());
+                output.set(
                     &rect::Output {
                         position,
                         orientation,

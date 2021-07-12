@@ -3,15 +3,18 @@ use bytemuck::Pod;
 use std::collections::HashMap;
 use std::convert::TryInto;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::mpsc;
 
 pub struct InstanceManager<T> {
     gfx: GraphicsContext,
     buffer: Option<wgpu::Buffer>,
     buffer_capacity: usize,
 
+    update_tx: mpsc::Sender<Update<T>>,
+    update_rx: mpsc::Receiver<Update<T>>,
     instances: Vec<T>,
-    instance_to_handle: Vec<Handle>,
-    handle_to_instance: HashMap<Handle, usize>,
+    instance_to_handle: Vec<u64>,
+    handle_to_instance: HashMap<u64, usize>,
     buffer_update: bool,
 }
 
@@ -20,11 +23,15 @@ where
     T: Pod,
 {
     pub fn new(gfx: &GraphicsContext) -> Self {
+        let (update_tx, update_rx) = mpsc::channel();
+
         Self {
             gfx: gfx.clone(),
             buffer: None,
             buffer_capacity: 0,
 
+            update_tx,
+            update_rx,
             instances: Vec::new(),
             instance_to_handle: Vec::new(),
             handle_to_instance: HashMap::new(),
@@ -32,48 +39,52 @@ where
         }
     }
 
-    pub fn insert(&mut self, instance: T) -> Handle {
-        let handle = Handle::new();
-        self.update(&handle, instance);
+    pub fn insert(&mut self, instance: T) -> Handle<T> {
+        let handle = Handle::new(self.update_tx.clone());
+        handle.set(instance);
         handle
     }
 
-    pub fn update(&mut self, handle: &Handle, instance: T) {
+    fn set(&mut self, handle: u64, instance: T) {
         self.buffer_update = true;
-        if let Some(&index) = self.handle_to_instance.get(handle) {
+
+        if let Some(&index) = self.handle_to_instance.get(&handle) {
             self.instances[index] = instance;
         } else {
             let index = self.instances.len();
             self.instances.push(instance);
-            self.instance_to_handle.push(handle.clone());
-            self.handle_to_instance.insert(handle.clone(), index);
+            self.instance_to_handle.push(handle);
+            self.handle_to_instance.insert(handle, index);
         }
     }
 
-    pub fn remove(&mut self, handle: &Handle) -> bool {
-        // If the handle exists for this renderer:
-        if let Some(index) = self.handle_to_instance.remove(handle) {
-            self.buffer_update = true;
+    fn remove(&mut self, handle: u64) {
+        self.buffer_update = true;
 
-            self.instances.swap_remove(index);
+        let index = self.handle_to_instance.remove(&handle).unwrap();
+        self.instances.swap_remove(index);
 
-            let removed_handle = self.instance_to_handle.swap_remove(index);
-            debug_assert!(removed_handle == *handle);
+        let removed_handle = self.instance_to_handle.swap_remove(index);
+        debug_assert!(removed_handle == handle);
 
-            if index != self.instances.len() {
-                // Update handle association for the instance that was swapped to this location.
-                let affected_handle = &self.instance_to_handle[index];
-                self.handle_to_instance
-                    .insert(affected_handle.clone(), index);
+        if index != self.instances.len() {
+            // Update handle association for the instance that was swapped to this location.
+            let affected_handle = self.instance_to_handle[index];
+            self.handle_to_instance.insert(affected_handle, index);
+        }
+    }
+
+    fn handle_updates(&mut self) {
+        while let Ok(update) = self.update_rx.try_recv() {
+            match update {
+                Update::Set(handle, instance) => self.set(handle, instance),
+                Update::Remove(handle) => self.remove(handle),
             }
-
-            true
-        } else {
-            false
         }
     }
 
     pub fn buffer(&mut self) -> Option<&wgpu::Buffer> {
+        self.handle_updates();
         if self.buffer_update {
             self.buffer_update = false;
 
@@ -107,18 +118,35 @@ where
     }
 }
 
+enum Update<T> {
+    Set(u64, T),
+    Remove(u64),
+}
+
 static NEXT_HANDLE: AtomicU64 = AtomicU64::new(0);
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Handle(u64);
+pub struct Handle<T> {
+    id: u64,
+    updates: mpsc::Sender<Update<T>>,
+}
 
-impl Handle {
-    fn new() -> Self {
-        let val = NEXT_HANDLE.fetch_add(1, Ordering::Relaxed);
+impl<T> Handle<T> {
+    fn new(updates: mpsc::Sender<Update<T>>) -> Self {
+        let id = NEXT_HANDLE.fetch_add(1, Ordering::Relaxed);
         // Prevent overflow:
-        if val == u64::MAX {
+        if id == u64::MAX {
             panic!("max instance handle reached")
         }
-        Self(val)
+        Self { id, updates }
+    }
+
+    pub fn set(&self, instance: T) {
+        self.updates.send(Update::Set(self.id, instance)).ok();
+    }
+}
+
+impl<T> Drop for Handle<T> {
+    fn drop(&mut self) {
+        self.updates.send(Update::Remove(self.id)).ok();
     }
 }

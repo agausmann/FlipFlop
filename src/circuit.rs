@@ -8,10 +8,12 @@ use crate::GraphicsContext;
 use glam::IVec2;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
+use std::rc::Rc;
 
 pub struct Circuit {
     board_renderer: BoardRenderer,
     rect_renderer: RectRenderer,
+    _root_board: board::Handle,
     tiles: HashMap<IVec2, Tile>,
     components: Depot<Component>,
     wires: Depot<Wire>,
@@ -21,7 +23,7 @@ pub struct Circuit {
 impl Circuit {
     pub fn new(gfx: &GraphicsContext, viewport: &Viewport) -> Self {
         let mut board_renderer = BoardRenderer::new(gfx, viewport);
-        board_renderer.insert(&board::Board {
+        let _root_board = board_renderer.insert(&board::Board {
             position: IVec2::new(-10_000, -10_000),
             size: IVec2::new(20_000, 20_000),
             color: [0.1, 0.1, 0.1, 1.0],
@@ -31,6 +33,7 @@ impl Circuit {
         Self {
             board_renderer,
             rect_renderer: RectRenderer::new(gfx, viewport),
+            _root_board,
             tiles: HashMap::new(),
             components: Depot::new(),
             wires: Depot::new(),
@@ -416,7 +419,7 @@ impl Circuit {
             position,
             orientation,
         };
-        component.update_sprite(&mut self.rect_renderer);
+        component.update_sprite();
 
         let id = self.components.insert(component);
         let tile = self.tiles.entry(position).or_default();
@@ -497,7 +500,7 @@ impl Circuit {
             cluster_index,
         });
         let wire = self.wires.get(&id);
-        wire.update_sprite(&mut self.rect_renderer);
+        wire.update_sprite();
         for pos in wire.tiles() {
             let tile = self.tiles.entry(pos).or_default();
             if pos != wire.start {
@@ -568,9 +571,7 @@ impl Circuit {
         tile.update_crossover(component.position, &mut self.rect_renderer);
 
         match &component.data {
-            ComponentData::Pin(_state, sprite) => {
-                self.rect_renderer.remove(&sprite.pin);
-
+            ComponentData::Pin(..) => {
                 let directions = [
                     Direction::North,
                     Direction::East,
@@ -579,11 +580,7 @@ impl Circuit {
                 ];
                 self.split_all(component.position, &directions);
             }
-            ComponentData::Flip(_state, sprite) => {
-                self.rect_renderer.remove(&sprite.body);
-                self.rect_renderer.remove(&sprite.input);
-                self.rect_renderer.remove(&sprite.output);
-
+            ComponentData::Flip(..) => {
                 let input_directions = [
                     orientation.right(),
                     orientation.opposite(),
@@ -591,11 +588,7 @@ impl Circuit {
                 ];
                 self.split_all(component.position, &input_directions);
             }
-            ComponentData::Flop(_state, sprite) => {
-                self.rect_renderer.remove(&sprite.body);
-                self.rect_renderer.remove(&sprite.input);
-                self.rect_renderer.remove(&sprite.output);
-            }
+            ComponentData::Flop(..) => {}
         }
         component
     }
@@ -620,7 +613,6 @@ impl Circuit {
             }
             tile.update_crossover(tile_pos, &mut self.rect_renderer);
         }
-        self.rect_renderer.remove(&wire.instance);
 
         let start_component = self.tile(wire.start).and_then(|tile| tile.component);
         let end_component = self.tile(wire.end).and_then(|tile| tile.component);
@@ -652,7 +644,7 @@ impl Circuit {
                 &GraphNode::Wire(handle) => {
                     let wire = self.wires.get_mut(&handle);
                     wire.cluster_index = into_index;
-                    wire.update_sprite(&mut self.rect_renderer);
+                    wire.update_sprite();
                 }
                 &GraphNode::Component(handle, direction) => {
                     let component = self.components.get_mut(&handle);
@@ -705,7 +697,7 @@ impl Circuit {
                             }
                         }
                     }
-                    component.update_sprite(&mut self.rect_renderer);
+                    component.update_sprite();
                 }
             }
         }
@@ -735,7 +727,7 @@ impl Circuit {
                 &GraphNode::Wire(handle) => {
                     let wire = self.wires.get_mut(&handle);
                     wire.cluster_index = split_index;
-                    wire.update_sprite(&mut self.rect_renderer);
+                    wire.update_sprite();
                 }
                 &GraphNode::Component(handle, direction) => {
                     let component = self.components.get_mut(&handle);
@@ -788,7 +780,7 @@ impl Circuit {
                             }
                         }
                     }
-                    component.update_sprite(&mut self.rect_renderer);
+                    component.update_sprite();
                 }
             }
         }
@@ -972,7 +964,7 @@ impl<'a> fmt::Display for TileDebugInfo<'a> {
 #[derive(Default, Clone)]
 pub struct Tile {
     pub component: Option<depot::Handle>,
-    pub crossover: Option<rect::Handle>,
+    pub crossover: Option<Rc<rect::Handle>>,
     pub wires: TileWires,
 }
 
@@ -980,12 +972,10 @@ impl Tile {
     fn update_crossover(&mut self, position: IVec2, renderer: &mut RectRenderer) {
         let wire_count = self.wires.count();
         if self.component.is_some() || wire_count < 2 {
-            if let Some(handle) = self.crossover.take() {
-                renderer.remove(&handle);
-            }
+            self.crossover = None;
         } else if wire_count >= 2 && self.crossover.is_none() {
             let handle = renderer.insert(&rect::Crossover { position }.into());
-            self.crossover = Some(handle);
+            self.crossover = Some(Rc::new(handle));
         }
     }
 }
@@ -1081,11 +1071,10 @@ impl Component {
         }
     }
 
-    fn update_sprite(&self, rect_renderer: &mut RectRenderer) {
+    fn update_sprite(&self) {
         match &self.data {
             ComponentData::Pin(state, sprite) => {
-                rect_renderer.update(
-                    &sprite.pin,
+                sprite.pin.set(
                     &rect::Pin {
                         position: self.position,
                         color: Color::Wire {
@@ -1098,15 +1087,13 @@ impl Component {
                 );
             }
             ComponentData::Flip(state, sprite) => {
-                rect_renderer.update(
-                    &sprite.body,
+                sprite.body.set(
                     &rect::Body {
                         position: self.position,
                     }
                     .into(),
                 );
-                rect_renderer.update(
-                    &sprite.input,
+                sprite.input.set(
                     &rect::Pin {
                         position: self.position,
                         color: Color::Wire {
@@ -1117,8 +1104,7 @@ impl Component {
                     }
                     .into(),
                 );
-                rect_renderer.update(
-                    &sprite.output,
+                sprite.output.set(
                     &rect::Output {
                         position: self.position,
                         orientation: self.orientation,
@@ -1132,15 +1118,13 @@ impl Component {
                 );
             }
             ComponentData::Flop(state, sprite) => {
-                rect_renderer.update(
-                    &sprite.body,
+                sprite.body.set(
                     &rect::Body {
                         position: self.position,
                     }
                     .into(),
                 );
-                rect_renderer.update(
-                    &sprite.input,
+                sprite.input.set(
                     &rect::SidePin {
                         position: self.position,
                         orientation: self.orientation.opposite(),
@@ -1152,8 +1136,7 @@ impl Component {
                     }
                     .into(),
                 );
-                rect_renderer.update(
-                    &sprite.output,
+                sprite.output.set(
                     &rect::Output {
                         position: self.position,
                         orientation: self.orientation,
@@ -1224,9 +1207,8 @@ impl Wire {
         wire_direction(self.start, self.end)
     }
 
-    fn update_sprite(&self, rect_renderer: &mut RectRenderer) {
-        rect_renderer.update(
-            &self.instance,
+    fn update_sprite(&self) {
+        self.instance.set(
             &rect::Wire {
                 start: self.start,
                 end: self.end,
