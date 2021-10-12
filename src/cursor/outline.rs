@@ -36,7 +36,7 @@ impl OutlineRenderer {
                             binding: 1,
                             visibility: wgpu::ShaderStage::FRAGMENT,
                             ty: wgpu::BindingType::Texture {
-                                sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                                sample_type: wgpu::TextureSampleType::Depth,
                                 view_dimension: wgpu::TextureViewDimension::D2,
                                 multisampled: false,
                             },
@@ -63,10 +63,7 @@ impl OutlineRenderer {
             });
         let fragment_module = gfx
             .device
-            .create_shader_module(&wgpu::include_spirv!(concat!(
-                env!("OUT_DIR"),
-                "/shaders/cursor_outline.frag.spv"
-            )));
+            .create_shader_module(&wgpu::include_wgsl!("../shaders/cursor_outline.wgsl"));
         let render_pipeline = gfx
             .device
             .create_render_pipeline(&wgpu::RenderPipelineDescriptor {

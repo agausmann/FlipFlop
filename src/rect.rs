@@ -119,7 +119,7 @@ impl RectRenderer {
                         binding: 0,
                         visibility: wgpu::ShaderStage::VERTEX,
                         ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            ty: wgpu::BufferBindingType::Uniform,
                             has_dynamic_offset: false,
                             min_binding_size: None,
                         },
@@ -134,25 +134,16 @@ impl RectRenderer {
                 bind_group_layouts: &[viewport.bind_group_layout(), &bind_group_layout],
                 push_constant_ranges: &[],
             });
-        let vertex_module = gfx
+        let shader_module = gfx
             .device
-            .create_shader_module(&wgpu::include_spirv!(concat!(
-                env!("OUT_DIR"),
-                "/shaders/rect.vert.spv"
-            )));
-        let fragment_module = gfx
-            .device
-            .create_shader_module(&wgpu::include_spirv!(concat!(
-                env!("OUT_DIR"),
-                "/shaders/rect.frag.spv"
-            )));
+            .create_shader_module(&wgpu::include_wgsl!("shaders/rect.wgsl"));
         let render_pipeline = gfx
             .device
             .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some("RectRenderer.render_pipeline"),
                 layout: Some(&pipeline_layout),
                 vertex: wgpu::VertexState {
-                    module: &vertex_module,
+                    module: &shader_module,
                     entry_point: "main",
                     buffers: &[Vertex::buffer_layout(), Instance::buffer_layout()],
                 },
@@ -174,7 +165,7 @@ impl RectRenderer {
                 }),
                 multisample: Default::default(),
                 fragment: Some(wgpu::FragmentState {
-                    module: &fragment_module,
+                    module: &shader_module,
                     entry_point: "main",
                     targets: &[wgpu::ColorTargetState {
                         format: gfx.render_format,
@@ -202,8 +193,8 @@ impl RectRenderer {
             });
         let cluster_state_buffer = gfx.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("RectRenderer.cluster_state_buffer"),
-            size: 1 * 1024 * 1024, //TODO dynamically-sized
-            usage: wgpu::BufferUsage::STORAGE | wgpu::BufferUsage::COPY_DST,
+            size: 1024 * 4,
+            usage: wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
             mapped_at_creation: false,
         });
 

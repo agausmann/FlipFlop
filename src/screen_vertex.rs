@@ -99,10 +99,7 @@ impl ScreenVertexShader {
     fn new(gfx: &GraphicsContext) -> Self {
         let vertex_module = gfx
             .device
-            .create_shader_module(&wgpu::include_spirv!(concat!(
-                env!("OUT_DIR"),
-                "/shaders/screen.vert.spv"
-            )));
+            .create_shader_module(&wgpu::include_wgsl!("shaders/screen.wgsl"));
         let vertex_buffer = gfx
             .device
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {

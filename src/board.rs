@@ -140,25 +140,16 @@ impl BoardRenderer {
                 bind_group_layouts: &[viewport.bind_group_layout(), &bind_group_layout],
                 push_constant_ranges: &[],
             });
-        let vertex_module = gfx
+        let shader_module = gfx
             .device
-            .create_shader_module(&wgpu::include_spirv!(concat!(
-                env!("OUT_DIR"),
-                "/shaders/board.vert.spv"
-            )));
-        let fragment_module = gfx
-            .device
-            .create_shader_module(&wgpu::include_spirv!(concat!(
-                env!("OUT_DIR"),
-                "/shaders/board.frag.spv"
-            )));
+            .create_shader_module(&wgpu::include_wgsl!("shaders/board.wgsl"));
         let render_pipeline = gfx
             .device
             .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some("BoardRenderer.render_pipeline"),
                 layout: Some(&pipeline_layout),
                 vertex: wgpu::VertexState {
-                    module: &vertex_module,
+                    module: &shader_module,
                     entry_point: "main",
                     buffers: &[Vertex::buffer_layout(), Instance::buffer_layout()],
                 },
@@ -180,7 +171,7 @@ impl BoardRenderer {
                 }),
                 multisample: Default::default(),
                 fragment: Some(wgpu::FragmentState {
-                    module: &fragment_module,
+                    module: &shader_module,
                     entry_point: "main",
                     targets: &[wgpu::ColorTargetState {
                         format: gfx.render_format,
