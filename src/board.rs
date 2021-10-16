@@ -34,7 +34,7 @@ impl Vertex {
     fn buffer_layout() -> wgpu::VertexBufferLayout<'static> {
         wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<Self>().try_into().unwrap(),
-            step_mode: wgpu::InputStepMode::Vertex,
+            step_mode: wgpu::VertexStepMode::Vertex,
             attributes: &VERTEX_ATTRIBUTES[..],
         }
     }
@@ -64,15 +64,15 @@ impl Instance {
     fn buffer_layout() -> wgpu::VertexBufferLayout<'static> {
         wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<Self>().try_into().unwrap(),
-            step_mode: wgpu::InputStepMode::Instance,
+            step_mode: wgpu::VertexStepMode::Instance,
             attributes: &INSTANCE_ATTRIBUTES[..],
         }
     }
 
     fn new(board: &Board) -> Self {
         Self {
-            position: board.position.as_f32().into(),
-            size: board.size.as_f32().into(),
+            position: board.position.as_vec2().into(),
+            size: board.size.as_vec2().into(),
             color: board.color,
             z_index: (board.z_index as f32) / (MAX_Z_INDEX as f32),
         }
@@ -113,7 +113,7 @@ impl BoardRenderer {
                     entries: &[
                         wgpu::BindGroupLayoutEntry {
                             binding: 0,
-                            visibility: wgpu::ShaderStage::FRAGMENT,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
                             ty: wgpu::BindingType::Texture {
                                 multisampled: false,
                                 view_dimension: wgpu::TextureViewDimension::D2,
@@ -123,7 +123,7 @@ impl BoardRenderer {
                         },
                         wgpu::BindGroupLayoutEntry {
                             binding: 1,
-                            visibility: wgpu::ShaderStage::FRAGMENT,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
                             ty: wgpu::BindingType::Sampler {
                                 comparison: false,
                                 filtering: true,
@@ -179,7 +179,7 @@ impl BoardRenderer {
                             color: wgpu::BlendComponent::REPLACE,
                             alpha: wgpu::BlendComponent::REPLACE,
                         }),
-                        write_mask: wgpu::ColorWrite::ALL,
+                        write_mask: wgpu::ColorWrites::ALL,
                     }],
                 }),
             });
@@ -188,14 +188,14 @@ impl BoardRenderer {
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("BoardRenderer.vertex_buffer"),
                 contents: bytemuck::cast_slice(VERTICES),
-                usage: wgpu::BufferUsage::VERTEX,
+                usage: wgpu::BufferUsages::VERTEX,
             });
         let index_buffer = gfx
             .device
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("BoardRenderer.index_buffer"),
                 contents: bytemuck::cast_slice(INDICES),
-                usage: wgpu::BufferUsage::INDEX,
+                usage: wgpu::BufferUsages::INDEX,
             });
 
         let board_image = image::load_from_memory(include_bytes!("textures/board.png"))
@@ -213,13 +213,14 @@ impl BoardRenderer {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Rgba8UnormSrgb,
-            usage: wgpu::TextureUsage::SAMPLED | wgpu::TextureUsage::COPY_DST,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
         });
         gfx.queue.write_texture(
             wgpu::ImageCopyTexture {
                 texture: &texture,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
+                aspect: Default::default(),
             },
             &board_image,
             wgpu::ImageDataLayout {

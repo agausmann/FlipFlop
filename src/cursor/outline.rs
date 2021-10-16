@@ -25,7 +25,7 @@ impl OutlineRenderer {
                     entries: &[
                         wgpu::BindGroupLayoutEntry {
                             binding: 0,
-                            visibility: wgpu::ShaderStage::FRAGMENT,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
                             ty: wgpu::BindingType::Sampler {
                                 filtering: false,
                                 comparison: false,
@@ -34,7 +34,7 @@ impl OutlineRenderer {
                         },
                         wgpu::BindGroupLayoutEntry {
                             binding: 1,
-                            visibility: wgpu::ShaderStage::FRAGMENT,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
                             ty: wgpu::BindingType::Texture {
                                 sample_type: wgpu::TextureSampleType::Depth,
                                 view_dimension: wgpu::TextureViewDimension::D2,
@@ -44,7 +44,7 @@ impl OutlineRenderer {
                         },
                         wgpu::BindGroupLayoutEntry {
                             binding: 2,
-                            visibility: wgpu::ShaderStage::FRAGMENT,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
                             ty: wgpu::BindingType::Buffer {
                                 ty: wgpu::BufferBindingType::Uniform,
                                 has_dynamic_offset: false,
@@ -94,7 +94,7 @@ impl OutlineRenderer {
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("OutlineRenderer.uniform_buffer"),
                 contents: bytemuck::bytes_of(&uniforms),
-                usage: wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             });
 
         Self {

@@ -57,12 +57,12 @@ pub struct GraphicsContextInner {
 
 impl GraphicsContextInner {
     async fn new(window: Window) -> anyhow::Result<Self> {
-        let instance = wgpu::Instance::new(wgpu::BackendBit::PRIMARY);
+        let instance = wgpu::Instance::new(wgpu::Backends::PRIMARY);
         let surface = unsafe { instance.create_surface(&window) };
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference: Default::default(),
                 compatible_surface: Some(&surface),
+                ..Default::default()
             })
             .await
             .context("Failed to find a suitable adapter")?;
@@ -79,7 +79,9 @@ impl GraphicsContextInner {
             .context("Failed to open device")?;
 
         // XXX does this produce incompatible formats on different backends?
-        let render_format = adapter.get_swap_chain_preferred_format(&surface).unwrap();
+        let render_format = surface
+            .get_preferred_format(&adapter)
+            .context("failed to select render format")?;
         let depth_format = wgpu::TextureFormat::Depth32Float;
 
         Ok(Self {
@@ -91,11 +93,23 @@ impl GraphicsContextInner {
             depth_format,
         })
     }
+
+    fn reconfigure(&self) {
+        self.surface.configure(
+            &self.device,
+            &wgpu::SurfaceConfiguration {
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                format: self.render_format,
+                width: self.window.inner_size().width,
+                height: self.window.inner_size().height,
+                present_mode: wgpu::PresentMode::Fifo,
+            },
+        )
+    }
 }
 
 struct State {
     gfx: GraphicsContext,
-    swap_chain: wgpu::SwapChain,
     depth_texture: wgpu::Texture,
     depth_texture_view: wgpu::TextureView,
     glyph_brush: wgpu_glyph::GlyphBrush<()>,
@@ -111,18 +125,6 @@ struct State {
     draw_help: bool,
 }
 
-fn create_swap_chain(gfx: &GraphicsContext) -> wgpu::SwapChain {
-    gfx.device.create_swap_chain(
-        &gfx.surface,
-        &wgpu::SwapChainDescriptor {
-            usage: wgpu::TextureUsage::RENDER_ATTACHMENT,
-            format: gfx.render_format,
-            width: gfx.window.inner_size().width,
-            height: gfx.window.inner_size().height,
-            present_mode: wgpu::PresentMode::Fifo,
-        },
-    )
-}
 fn create_depth_texture(gfx: &GraphicsContext) -> wgpu::Texture {
     gfx.device.create_texture(&wgpu::TextureDescriptor {
         label: Some("depth_texture"),
@@ -135,14 +137,14 @@ fn create_depth_texture(gfx: &GraphicsContext) -> wgpu::Texture {
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
         format: gfx.depth_format,
-        usage: wgpu::TextureUsage::RENDER_ATTACHMENT | wgpu::TextureUsage::SAMPLED,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
     })
 }
 
 impl State {
     async fn new(window: Window) -> anyhow::Result<Self> {
         let gfx = Arc::new(GraphicsContextInner::new(window).await?);
-        let swap_chain = create_swap_chain(&gfx);
+        gfx.reconfigure();
         let depth_texture = create_depth_texture(&gfx);
         let depth_texture_view = depth_texture.create_view(&Default::default());
 
@@ -160,7 +162,6 @@ impl State {
 
         Ok(Self {
             gfx,
-            swap_chain,
             depth_texture,
             depth_texture_view,
             glyph_brush,
@@ -183,7 +184,7 @@ impl State {
                 self.should_close = true;
             }
             WindowEvent::Resized(..) | WindowEvent::ScaleFactorChanged { .. } => {
-                self.rebuild_swap_chain();
+                self.reconfigure();
             }
             WindowEvent::CursorMoved { position, .. } => {
                 let position = Vec2::new(position.x as f32, position.y as f32);
@@ -331,12 +332,12 @@ impl State {
         self.frame_counter.tick();
 
         let frame = loop {
-            match self.swap_chain.get_current_frame() {
-                Ok(frame) => break frame.output,
-                Err(wgpu::SwapChainError::Lost) => {
-                    self.rebuild_swap_chain();
+            match self.gfx.surface.get_current_texture() {
+                Ok(frame) => break frame,
+                Err(wgpu::SurfaceError::Lost) => {
+                    self.reconfigure();
                 }
-                Err(wgpu::SwapChainError::Timeout) | Err(wgpu::SwapChainError::Outdated) => {
+                Err(wgpu::SurfaceError::Timeout) | Err(wgpu::SurfaceError::Outdated) => {
                     return Ok(());
                 }
                 Err(err) => {
@@ -345,19 +346,21 @@ impl State {
             }
         };
 
+        let frame_view = frame.texture.create_view(&Default::default());
+
         let mut encoder = self.gfx.device.create_command_encoder(&Default::default());
 
         {
             self.circuit.draw(
                 &self.viewport,
                 &mut encoder,
-                &frame.view,
+                &frame_view,
                 &self.depth_texture_view,
             );
             self.cursor_manager.draw(
                 &self.viewport,
                 &mut encoder,
-                &frame.view,
+                &frame_view,
                 &self.depth_texture_view,
             );
         }
@@ -386,7 +389,7 @@ impl State {
                 &self.gfx.device,
                 &mut self.staging_belt,
                 &mut encoder,
-                &frame.view,
+                &frame_view,
                 size.width,
                 size.height,
             )
@@ -394,6 +397,7 @@ impl State {
         self.staging_belt.finish();
 
         self.gfx.queue.submit(std::iter::once(encoder.finish()));
+        frame.present();
 
         use futures_util::task::SpawnExt;
         self.local_spawner
@@ -421,9 +425,8 @@ impl State {
         )
     }
 
-    fn rebuild_swap_chain(&mut self) {
-        self.swap_chain = create_swap_chain(&self.gfx);
-
+    fn reconfigure(&mut self) {
+        self.gfx.reconfigure();
         self.depth_texture = create_depth_texture(&self.gfx);
         self.depth_texture_view = self.depth_texture.create_view(&Default::default());
     }

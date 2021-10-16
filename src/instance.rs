@@ -109,7 +109,7 @@ where
             let buffer = self.gfx.device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some(&format!("{}.buffer", std::any::type_name::<Self>())),
                 size: bytes.try_into().unwrap(),
-                usage: wgpu::BufferUsage::VERTEX | wgpu::BufferUsage::COPY_DST,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
             });
             self.buffer = Some(buffer);

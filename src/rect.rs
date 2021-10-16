@@ -36,7 +36,7 @@ impl Vertex {
     fn buffer_layout() -> wgpu::VertexBufferLayout<'static> {
         wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<Self>().try_into().unwrap(),
-            step_mode: wgpu::InputStepMode::Vertex,
+            step_mode: wgpu::VertexStepMode::Vertex,
             attributes: &VERTEX_ATTRIBUTES[..],
         }
     }
@@ -66,7 +66,7 @@ impl Instance {
     fn buffer_layout() -> wgpu::VertexBufferLayout<'static> {
         wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<Self>().try_into().unwrap(),
-            step_mode: wgpu::InputStepMode::Instance,
+            step_mode: wgpu::VertexStepMode::Instance,
             attributes: &INSTANCE_ATTRIBUTES[..],
         }
     }
@@ -117,7 +117,7 @@ impl RectRenderer {
                     label: Some("RectRenderer.bind_group_layout"),
                     entries: &[wgpu::BindGroupLayoutEntry {
                         binding: 0,
-                        visibility: wgpu::ShaderStage::VERTEX,
+                        visibility: wgpu::ShaderStages::VERTEX,
                         ty: wgpu::BindingType::Buffer {
                             ty: wgpu::BufferBindingType::Uniform,
                             has_dynamic_offset: false,
@@ -173,7 +173,7 @@ impl RectRenderer {
                             color: wgpu::BlendComponent::REPLACE,
                             alpha: wgpu::BlendComponent::REPLACE,
                         }),
-                        write_mask: wgpu::ColorWrite::ALL,
+                        write_mask: wgpu::ColorWrites::ALL,
                     }],
                 }),
             });
@@ -182,19 +182,19 @@ impl RectRenderer {
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("RectRenderer.vertex_buffer"),
                 contents: bytemuck::cast_slice(VERTICES),
-                usage: wgpu::BufferUsage::VERTEX,
+                usage: wgpu::BufferUsages::VERTEX,
             });
         let index_buffer = gfx
             .device
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("RectRenderer.index_buffer"),
                 contents: bytemuck::cast_slice(INDICES),
-                usage: wgpu::BufferUsage::INDEX,
+                usage: wgpu::BufferUsages::INDEX,
             });
         let cluster_state_buffer = gfx.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("RectRenderer.cluster_state_buffer"),
             size: 1024 * 4,
-            usage: wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
@@ -404,11 +404,11 @@ impl From<Wire> for Rect {
             (wire.end_connection, wire.start_connection)
         };
         Self {
-            position: abs_position.as_f32()
+            position: abs_position.as_vec2()
                 + Vec2::splat(0.5 - WIRE_RADIUS)
                 + Vec2::splat(start_conn.offset()) * axis,
             z_index,
-            size: abs_size.as_f32() + Vec2::splat(2.0 * WIRE_RADIUS)
+            size: abs_size.as_vec2() + Vec2::splat(2.0 * WIRE_RADIUS)
                 - Vec2::splat(start_conn.offset() + end_conn.offset()) * axis,
             color: wire.color,
         }
@@ -422,7 +422,7 @@ pub struct Body {
 impl From<Body> for Rect {
     fn from(body: Body) -> Self {
         Self {
-            position: body.position.as_f32() + Vec2::splat(0.5 - BODY_RADIUS),
+            position: body.position.as_vec2() + Vec2::splat(0.5 - BODY_RADIUS),
             z_index: BODY_Z_INDEX,
             size: Vec2::splat(2.0 * BODY_RADIUS),
             color: Color::Fixed(Vec4::new(1.0, 1.0, 1.0, 1.0)),
@@ -438,7 +438,7 @@ pub struct Pin {
 impl From<Pin> for Rect {
     fn from(pin: Pin) -> Self {
         Self {
-            position: pin.position.as_f32() + Vec2::splat(0.5 - PIN_RADIUS),
+            position: pin.position.as_vec2() + Vec2::splat(0.5 - PIN_RADIUS),
             z_index: PIN_Z_INDEX,
             size: Vec2::splat(2.0 * PIN_RADIUS),
             color: pin.color,
@@ -457,7 +457,7 @@ impl From<SidePin> for Rect {
         let transform = Direction::East.to(pin.orientation).transform();
 
         Self {
-            position: pin.position.as_f32()
+            position: pin.position.as_vec2()
                 + Vec2::splat(0.5)
                 + transform * Vec2::new(SIDE_PIN_DISTANCE, -PIN_RADIUS),
             size: transform * Vec2::new(SIDE_PIN_HEIGHT, 2.0 * PIN_RADIUS),
@@ -478,7 +478,7 @@ impl From<Output> for Rect {
         let transform = Direction::East.to(output.orientation).transform();
 
         Self {
-            position: output.position.as_f32()
+            position: output.position.as_vec2()
                 + Vec2::splat(0.5)
                 + transform * Vec2::new(BODY_RADIUS, -OUTPUT_RADIUS),
             size: transform * Vec2::new(OUTPUT_HEIGHT, 2.0 * OUTPUT_RADIUS),
@@ -495,7 +495,7 @@ pub struct Crossover {
 impl From<Crossover> for Rect {
     fn from(cross: Crossover) -> Self {
         Self {
-            position: cross.position.as_f32() + Vec2::splat(0.5 - CROSSOVER_RADIUS),
+            position: cross.position.as_vec2() + Vec2::splat(0.5 - CROSSOVER_RADIUS),
             z_index: CROSSOVER_Z_INDEX,
             size: Vec2::splat(2.0 * CROSSOVER_RADIUS),
             color: Color::Fixed(Vec4::new(0.5, 0.5, 0.5, 1.0)),
