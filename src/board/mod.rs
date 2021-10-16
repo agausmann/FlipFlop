@@ -142,7 +142,7 @@ impl BoardRenderer {
             });
         let shader_module = gfx
             .device
-            .create_shader_module(&wgpu::include_wgsl!("shaders/board.wgsl"));
+            .create_shader_module(&wgpu::include_wgsl!("board.wgsl"));
         let render_pipeline = gfx
             .device
             .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -198,7 +198,7 @@ impl BoardRenderer {
                 usage: wgpu::BufferUsages::INDEX,
             });
 
-        let board_image = image::load_from_memory(include_bytes!("textures/board.png"))
+        let board_image = image::load_from_memory(include_bytes!("board.png"))
             .expect("failed to load board texture")
             .into_rgba8();
         let size = wgpu::Extent3d {

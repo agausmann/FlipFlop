@@ -136,7 +136,7 @@ impl RectRenderer {
             });
         let shader_module = gfx
             .device
-            .create_shader_module(&wgpu::include_wgsl!("shaders/rect.wgsl"));
+            .create_shader_module(&wgpu::include_wgsl!("rect.wgsl"));
         let render_pipeline = gfx
             .device
             .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
