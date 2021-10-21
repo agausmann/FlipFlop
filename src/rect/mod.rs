@@ -7,7 +7,6 @@ use bitvec::prelude::{BitVec, Lsb0};
 use bytemuck::{Pod, Zeroable};
 use glam::{IVec2, Vec2, Vec4};
 use once_cell::sync::Lazy;
-use std::convert::TryInto;
 use wgpu::util::DeviceExt;
 
 pub struct Handle {

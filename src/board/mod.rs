@@ -4,7 +4,6 @@ use crate::GraphicsContext;
 use bytemuck::{Pod, Zeroable};
 use glam::IVec2;
 use once_cell::sync::Lazy;
-use std::convert::TryInto;
 use std::num::NonZeroU32;
 use wgpu::util::DeviceExt;
 

@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::convert::TryInto;
 
 pub struct Simulation {
     // Tracks unused cluster indexes so they can be re-used.
