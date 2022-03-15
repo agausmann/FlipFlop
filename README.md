@@ -1,5 +1,7 @@
 # FlipFlop
 
+![A full adder circuit in FlipFlop](media/full-adder.png)
+
 A digital logic simulator built on simple rules.
 
 ## How it works
