@@ -26,10 +26,7 @@ impl OutlineRenderer {
                         wgpu::BindGroupLayoutEntry {
                             binding: 0,
                             visibility: wgpu::ShaderStages::FRAGMENT,
-                            ty: wgpu::BindingType::Sampler {
-                                filtering: false,
-                                comparison: false,
-                            },
+                            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::NonFiltering),
                             count: None,
                         },
                         wgpu::BindGroupLayoutEntry {
@@ -63,7 +60,7 @@ impl OutlineRenderer {
             });
         let fragment_module = gfx
             .device
-            .create_shader_module(&wgpu::include_wgsl!("cursor_outline.wgsl"));
+            .create_shader_module(wgpu::include_wgsl!("cursor_outline.wgsl"));
         let render_pipeline = gfx
             .device
             .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -75,13 +72,14 @@ impl OutlineRenderer {
                 multisample: Default::default(),
                 fragment: Some(wgpu::FragmentState {
                     module: &fragment_module,
-                    entry_point: "main",
-                    targets: &[wgpu::ColorTargetState {
+                    entry_point: "fs_main",
+                    targets: &[Some(wgpu::ColorTargetState {
                         format: gfx.render_format,
                         blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                         write_mask: Default::default(),
-                    }],
+                    })],
                 }),
+                multiview: None,
             });
 
         let depth_sampler = gfx.device.create_sampler(&wgpu::SamplerDescriptor {
@@ -139,14 +137,14 @@ impl OutlineRenderer {
 
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("OutlineRenderer.render_pass"),
-            color_attachments: &[wgpu::RenderPassColorAttachment {
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: &frame_view,
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Load,
                     store: true,
                 },
-            }],
+            })],
             depth_stencil_attachment: None,
         });
 
@@ -181,12 +179,14 @@ impl OutlineRenderer {
 #[repr(C)]
 struct Uniforms {
     outline_color: [f32; 3],
+    padding: [u8; 4],
 }
 
 impl Default for Uniforms {
     fn default() -> Self {
         Self {
             outline_color: [0.0, 0.0, 1.0],
+            padding: [0; 4],
         }
     }
 }

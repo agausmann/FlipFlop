@@ -116,17 +116,14 @@ impl BoardRenderer {
                             ty: wgpu::BindingType::Texture {
                                 multisampled: false,
                                 view_dimension: wgpu::TextureViewDimension::D2,
-                                sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                                sample_type: wgpu::TextureSampleType::Float { filterable: true },
                             },
                             count: None,
                         },
                         wgpu::BindGroupLayoutEntry {
                             binding: 1,
                             visibility: wgpu::ShaderStages::FRAGMENT,
-                            ty: wgpu::BindingType::Sampler {
-                                comparison: false,
-                                filtering: true,
-                            },
+                            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                             count: None,
                         },
                     ],
@@ -141,7 +138,7 @@ impl BoardRenderer {
             });
         let shader_module = gfx
             .device
-            .create_shader_module(&wgpu::include_wgsl!("board.wgsl"));
+            .create_shader_module(wgpu::include_wgsl!("board.wgsl"));
         let render_pipeline = gfx
             .device
             .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -149,17 +146,13 @@ impl BoardRenderer {
                 layout: Some(&pipeline_layout),
                 vertex: wgpu::VertexState {
                     module: &shader_module,
-                    entry_point: "main",
+                    entry_point: "vs_main",
                     buffers: &[Vertex::buffer_layout(), Instance::buffer_layout()],
                 },
                 primitive: wgpu::PrimitiveState {
                     topology: wgpu::PrimitiveTopology::TriangleList,
-                    strip_index_format: None,
                     front_face: wgpu::FrontFace::Cw,
-                    cull_mode: None,
-                    clamp_depth: false,
-                    polygon_mode: wgpu::PolygonMode::Fill,
-                    conservative: false,
+                    ..Default::default()
                 },
                 depth_stencil: Some(wgpu::DepthStencilState {
                     format: gfx.depth_format,
@@ -171,16 +164,17 @@ impl BoardRenderer {
                 multisample: Default::default(),
                 fragment: Some(wgpu::FragmentState {
                     module: &shader_module,
-                    entry_point: "main",
-                    targets: &[wgpu::ColorTargetState {
+                    entry_point: "fs_main",
+                    targets: &[Some(wgpu::ColorTargetState {
                         format: gfx.render_format,
                         blend: Some(wgpu::BlendState {
                             color: wgpu::BlendComponent::REPLACE,
                             alpha: wgpu::BlendComponent::REPLACE,
                         }),
                         write_mask: wgpu::ColorWrites::ALL,
-                    }],
+                    })],
                 }),
+                multiview: None,
             });
         let vertex_buffer = gfx
             .device
@@ -285,7 +279,7 @@ impl BoardRenderer {
 
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("BoardRenderer.render_pass"),
-            color_attachments: &[wgpu::RenderPassColorAttachment {
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: &frame_view,
                 resolve_target: None,
                 ops: wgpu::Operations {
@@ -297,7 +291,7 @@ impl BoardRenderer {
                     }),
                     store: true,
                 },
-            }],
+            })],
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                 view: depth_view,
                 depth_ops: Some(wgpu::Operations {

@@ -57,11 +57,12 @@ pub struct GraphicsContextInner {
 
 impl GraphicsContextInner {
     async fn new(window: Window) -> anyhow::Result<Self> {
-        let instance = wgpu::Instance::new(wgpu::Backends::PRIMARY);
+        let instance = wgpu::Instance::new(wgpu::Backends::all());
         let surface = unsafe { instance.create_surface(&window) };
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
                 compatible_surface: Some(&surface),
+                power_preference: wgpu::PowerPreference::LowPower,
                 ..Default::default()
             })
             .await
@@ -79,9 +80,7 @@ impl GraphicsContextInner {
             .context("Failed to open device")?;
 
         // XXX does this produce incompatible formats on different backends?
-        let render_format = surface
-            .get_preferred_format(&adapter)
-            .context("failed to select render format")?;
+        let render_format = surface.get_supported_formats(&adapter)[0];
         let depth_format = wgpu::TextureFormat::Depth32Float;
 
         Ok(Self {
@@ -103,6 +102,7 @@ impl GraphicsContextInner {
                 width: self.window.inner_size().width,
                 height: self.window.inner_size().height,
                 present_mode: wgpu::PresentMode::Fifo,
+                alpha_mode: wgpu::CompositeAlphaMode::Opaque,
             },
         )
     }
@@ -114,8 +114,6 @@ struct State {
     depth_texture_view: wgpu::TextureView,
     glyph_brush: wgpu_glyph::GlyphBrush<()>,
     staging_belt: wgpu::util::StagingBelt,
-    local_pool: futures_executor::LocalPool,
-    local_spawner: futures_executor::LocalSpawner,
     viewport: Viewport,
     frame_counter: Counter,
     should_close: bool,
@@ -152,8 +150,6 @@ impl State {
         let glyph_brush =
             GlyphBrushBuilder::using_font(fira_sans).build(&gfx.device, gfx.render_format);
         let staging_belt = wgpu::util::StagingBelt::new(1024);
-        let local_pool = futures_executor::LocalPool::new();
-        let local_spawner = local_pool.spawner();
 
         let viewport = Viewport::new(&gfx);
 
@@ -166,8 +162,6 @@ impl State {
             depth_texture_view,
             glyph_brush,
             staging_belt,
-            local_pool,
-            local_spawner,
             viewport,
             frame_counter: Counter::new(),
             should_close: false,
@@ -399,11 +393,7 @@ impl State {
         self.gfx.queue.submit(std::iter::once(encoder.finish()));
         frame.present();
 
-        use futures_util::task::SpawnExt;
-        self.local_spawner
-            .spawn(self.staging_belt.recall())
-            .expect("Recall error");
-        self.local_pool.run_until_stalled();
+        self.staging_belt.recall();
 
         Ok(())
     }
@@ -437,7 +427,7 @@ fn main() -> anyhow::Result<()> {
 
     // The window decorations provided by winit when using wayland do not match the native system
     // theme, so fallback to X11 via XWayland if possible.
-    std::env::set_var("WINIT_UNIX_BACKEND", "x11");
+    // std::env::set_var("WINIT_UNIX_BACKEND", "x11");
 
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new()

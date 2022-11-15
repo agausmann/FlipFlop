@@ -135,7 +135,7 @@ impl RectRenderer {
             });
         let shader_module = gfx
             .device
-            .create_shader_module(&wgpu::include_wgsl!("rect.wgsl"));
+            .create_shader_module(wgpu::include_wgsl!("rect.wgsl"));
         let render_pipeline = gfx
             .device
             .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -143,17 +143,13 @@ impl RectRenderer {
                 layout: Some(&pipeline_layout),
                 vertex: wgpu::VertexState {
                     module: &shader_module,
-                    entry_point: "main",
+                    entry_point: "vs_main",
                     buffers: &[Vertex::buffer_layout(), Instance::buffer_layout()],
                 },
                 primitive: wgpu::PrimitiveState {
                     topology: wgpu::PrimitiveTopology::TriangleList,
-                    strip_index_format: None,
                     front_face: wgpu::FrontFace::Cw,
-                    cull_mode: None,
-                    clamp_depth: false,
-                    polygon_mode: wgpu::PolygonMode::Fill,
-                    conservative: false,
+                    ..Default::default()
                 },
                 depth_stencil: Some(wgpu::DepthStencilState {
                     format: gfx.depth_format,
@@ -165,16 +161,17 @@ impl RectRenderer {
                 multisample: Default::default(),
                 fragment: Some(wgpu::FragmentState {
                     module: &shader_module,
-                    entry_point: "main",
-                    targets: &[wgpu::ColorTargetState {
+                    entry_point: "fs_main",
+                    targets: &[Some(wgpu::ColorTargetState {
                         format: gfx.render_format,
                         blend: Some(wgpu::BlendState {
                             color: wgpu::BlendComponent::REPLACE,
                             alpha: wgpu::BlendComponent::REPLACE,
                         }),
                         write_mask: wgpu::ColorWrites::ALL,
-                    }],
+                    })],
                 }),
+                multiview: None,
             });
         let vertex_buffer = gfx
             .device
@@ -192,7 +189,7 @@ impl RectRenderer {
             });
         let cluster_state_buffer = gfx.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("RectRenderer.cluster_state_buffer"),
-            size: 1024 * 4,
+            size: 1024 * 4 * 4,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -225,7 +222,7 @@ impl RectRenderer {
     }
 
     pub fn update_cluster_states(&mut self, simulation: &Simulation) {
-        let mut state_buffer: BitVec<Lsb0, u32> =
+        let mut state_buffer: BitVec<u32, Lsb0> =
             BitVec::with_capacity(simulation.num_clusters() as usize * 2);
         for index in 0..simulation.num_clusters() {
             state_buffer.push(simulation.is_powered(index));
@@ -254,14 +251,14 @@ impl RectRenderer {
 
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("RectRenderer.render_pass"),
-            color_attachments: &[wgpu::RenderPassColorAttachment {
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: &frame_view,
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Load,
                     store: true,
                 },
-            }],
+            })],
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                 view: depth_view,
                 depth_ops: Some(wgpu::Operations {

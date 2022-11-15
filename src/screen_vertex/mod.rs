@@ -62,7 +62,7 @@ impl ScreenVertexShader {
     pub fn vertex_state(&self) -> wgpu::VertexState {
         wgpu::VertexState {
             module: &self.vertex_module,
-            entry_point: "main",
+            entry_point: "vs_main",
             buffers: &*BUFFER_LAYOUTS,
         }
     }
@@ -70,12 +70,8 @@ impl ScreenVertexShader {
     pub fn primitive_state(&self) -> wgpu::PrimitiveState {
         wgpu::PrimitiveState {
             topology: wgpu::PrimitiveTopology::TriangleList,
-            strip_index_format: None,
             front_face: wgpu::FrontFace::Cw,
-            cull_mode: None,
-            clamp_depth: false,
-            polygon_mode: Default::default(),
-            conservative: false,
+            ..Default::default()
         }
     }
 
@@ -98,7 +94,7 @@ impl ScreenVertexShader {
     fn new(gfx: &GraphicsContext) -> Self {
         let vertex_module = gfx
             .device
-            .create_shader_module(&wgpu::include_wgsl!("screen.wgsl"));
+            .create_shader_module(wgpu::include_wgsl!("screen.wgsl"));
         let vertex_buffer = gfx
             .device
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {

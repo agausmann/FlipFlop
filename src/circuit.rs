@@ -222,7 +222,7 @@ impl Circuit {
             }
         }
 
-        &self.insert_component(ty, position, orientation);
+        self.insert_component(ty, position, orientation);
         true
     }
 
