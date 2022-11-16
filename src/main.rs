@@ -38,9 +38,11 @@ Place Component - Left click
 Place Wire - Left click and drag
 Remove Component/Wire - Right click
 Rotate Component - R
+Interact with Component - E
 1 - Pin/Wire
 2 - Flip
 3 - Flop
+4 - Switch
 ";
 
 pub type GraphicsContext = Arc<GraphicsContextInner>;
@@ -295,6 +297,13 @@ impl State {
                         }
                         VirtualKeyCode::Key3 if pressed => {
                             self.cursor_manager.set_place_type(ComponentType::Flop);
+                        }
+                        VirtualKeyCode::Key4 if pressed => {
+                            self.cursor_manager.set_place_type(ComponentType::Switch);
+                        }
+                        VirtualKeyCode::E if pressed => {
+                            //TODO more intuitive controls?
+                            self.circuit.interact(self.viewport.cursor().tile())
                         }
                         VirtualKeyCode::R if pressed => {
                             self.cursor_manager.set_place_orientation(

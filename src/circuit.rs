@@ -5,7 +5,7 @@ use crate::rect::{self, Color, RectRenderer, WireConnection};
 use crate::simulation::Simulation;
 use crate::viewport::Viewport;
 use crate::GraphicsContext;
-use glam::IVec2;
+use glam::{IVec2, Vec4};
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::rc::Rc;
@@ -70,6 +70,32 @@ impl Circuit {
         self.component(pos).map(|component| component.get_type())
     }
 
+    pub fn interact(&mut self, pos: IVec2) {
+        let component = self
+            .tile(pos)
+            .and_then(|tile| tile.component)
+            .map(|handle| self.components.get_mut(&handle));
+        let component = match component {
+            Some(x) => x,
+            None => return,
+        };
+
+        match &mut component.data {
+            ComponentData::Pin(..) => {}
+            ComponentData::Flip(..) => {}
+            ComponentData::Flop(..) => {}
+            ComponentData::Switch(state, _sprite) => {
+                state.switched = !state.switched;
+                if state.switched {
+                    self.simulation.power(state.input_cluster_index);
+                } else {
+                    self.simulation.unpower(state.input_cluster_index);
+                }
+                component.update_sprite();
+            }
+        }
+    }
+
     pub fn can_place_wire(&self, start: IVec2, end: IVec2) -> bool {
         let wire_direction = wire_direction(start, end);
 
@@ -118,6 +144,21 @@ impl Circuit {
                         let illegal_directions =
                             [component.orientation.left(), component.orientation.right()];
                         if illegal_directions.contains(&wire_direction) {
+                            return false;
+                        }
+                    }
+                    ComponentType::Switch => {
+                        // Wires can never be placed across switches;
+                        // the switch must be at the start or end of the wire.
+                        if tile_pos != start && tile_pos != end {
+                            return false;
+                        }
+
+                        // The wire must be in the same direction if it is at the start,
+                        // or the opposite direction if it is at the end.
+                        if tile_pos == start && wire_direction != component.orientation
+                            || tile_pos == end && wire_direction != component.orientation.opposite()
+                        {
                             return false;
                         }
                     }
@@ -182,8 +223,8 @@ impl Circuit {
                     return false;
                 }
             }
-            ComponentType::Flop => {
-                // Flops cannot be placed on any location that has a wire.
+            ComponentType::Flop | ComponentType::Switch => {
+                // Flops and switches cannot be placed on any location that has a wire.
                 if tile.wires.count() != 0 {
                     return false;
                 }
@@ -251,6 +292,7 @@ impl Circuit {
                 }
                 ComponentType::Flip => {}
                 ComponentType::Flop => {}
+                ComponentType::Switch => {}
             }
         }
     }
@@ -418,6 +460,30 @@ impl Circuit {
                 };
                 ComponentData::Flop(state, sprite)
             }
+            ComponentType::Switch => {
+                let mut output_node = None;
+                if let Some(tile) = self.tile(position).cloned() {
+                    output_node = tile.wires.get(orientation).map(GraphNode::Wire);
+                }
+                let input_cluster_index = self.simulation.alloc_cluster();
+                let output_cluster_index = match output_node {
+                    Some(node) => self.cluster_id(&node),
+                    None => self.simulation.alloc_cluster(),
+                };
+                self.simulation
+                    .add_flop(input_cluster_index, output_cluster_index);
+                let state = SwitchState {
+                    input_cluster_index,
+                    output_cluster_index,
+                    switched: false,
+                };
+                let sprite = SwitchSprite {
+                    body: self.rect_renderer.insert(&Default::default()),
+                    output: self.rect_renderer.insert(&Default::default()),
+                    indicator: self.rect_renderer.insert(&Default::default()),
+                };
+                ComponentData::Switch(state, sprite)
+            }
         };
         let component = Component {
             data,
@@ -568,6 +634,22 @@ impl Circuit {
                     self.simulation.free_cluster(output_cluster_index);
                 }
             }
+            ComponentData::Switch(state, _sprite) => {
+                let &SwitchState {
+                    input_cluster_index,
+                    output_cluster_index,
+                    ..
+                } = state;
+
+                self.simulation
+                    .remove_flop(input_cluster_index, output_cluster_index);
+
+                self.simulation.free_cluster(input_cluster_index);
+
+                if !self.has_neighbors(&GraphNode::Component(component_id, orientation)) {
+                    self.simulation.free_cluster(output_cluster_index);
+                }
+            }
         }
 
         let component = self.components.remove(&component_id);
@@ -594,6 +676,7 @@ impl Circuit {
                 self.split_all(component.position, &input_directions);
             }
             ComponentData::Flop(..) => {}
+            ComponentData::Switch(..) => {}
         }
         component
     }
@@ -701,6 +784,20 @@ impl Circuit {
                                 unreachable!()
                             }
                         }
+                        ComponentData::Switch(state, _sprite) => {
+                            if direction == component.orientation {
+                                // Output cluster changed:
+                                self.simulation.remove_flop(
+                                    state.input_cluster_index,
+                                    state.output_cluster_index,
+                                );
+                                self.simulation
+                                    .add_flop(state.input_cluster_index, into_index);
+                                state.output_cluster_index = into_index;
+                            } else {
+                                unreachable!()
+                            }
+                        }
                     }
                     component.update_sprite();
                 }
@@ -784,6 +881,20 @@ impl Circuit {
                                 unreachable!()
                             }
                         }
+                        ComponentData::Switch(state, _sprite) => {
+                            if direction == component.orientation {
+                                // Output cluster changed:
+                                self.simulation.remove_flop(
+                                    state.input_cluster_index,
+                                    state.output_cluster_index,
+                                );
+                                self.simulation
+                                    .add_flop(state.input_cluster_index, split_index);
+                                state.output_cluster_index = split_index;
+                            } else {
+                                unreachable!()
+                            }
+                        }
                     }
                     component.update_sprite();
                 }
@@ -850,6 +961,13 @@ impl Circuit {
                             unreachable!()
                         }
                     }
+                    ComponentData::Switch(state, _sprite) => {
+                        if direction == component.orientation {
+                            state.output_cluster_index
+                        } else {
+                            unreachable!()
+                        }
+                    }
                 }
             }
         }
@@ -895,8 +1013,8 @@ impl Circuit {
                             &[Relative::Right, Relative::Opposite, Relative::Left]
                         }
                     }
-                    ComponentType::Flop => {
-                        // Flops have no faces connected to each other.
+                    ComponentType::Flop | ComponentType::Switch => {
+                        // Flops and switches have no faces connected to each other.
                         if let Some(wire_handle) = tile.wires.get(direction) {
                             visitor(GraphNode::Wire(wire_handle));
                         }
@@ -945,6 +1063,13 @@ impl<'a> fmt::Display for TileDebugInfo<'a> {
                             f,
                             "Component: Flop ({} -> {})",
                             state.input_cluster_index, state.output_cluster_index,
+                        )?;
+                    }
+                    ComponentData::Switch(state, _sprite) => {
+                        writeln!(
+                            f,
+                            "Component: Switch ({} -> {})",
+                            state.input_cluster_index, state.output_cluster_index
                         )?;
                     }
                 }
@@ -1039,6 +1164,7 @@ pub enum ComponentType {
     Pin,
     Flip,
     Flop,
+    Switch,
 }
 
 struct Component {
@@ -1053,6 +1179,7 @@ impl Component {
             ComponentData::Pin(..) => ComponentType::Pin,
             ComponentData::Flip(..) => ComponentType::Flip,
             ComponentData::Flop(..) => ComponentType::Flop,
+            ComponentData::Switch(..) => ComponentType::Switch,
         }
     }
 
@@ -1073,6 +1200,7 @@ impl Component {
                     WireConnection::SidePin
                 }
             }
+            ComponentType::Switch => WireConnection::Output,
         }
     }
 
@@ -1154,6 +1282,45 @@ impl Component {
                     .into(),
                 );
             }
+            ComponentData::Switch(state, sprite) => {
+                sprite.body.set(
+                    &rect::Body {
+                        position: self.position,
+                    }
+                    .into(),
+                );
+                sprite.output.set(
+                    &rect::Output {
+                        position: self.position,
+                        orientation: self.orientation,
+                        color: Color::Wire {
+                            cluster_index: state.input_cluster_index,
+                            delayed: true,
+                            inverted: false,
+                        },
+                    }
+                    .into(),
+                );
+                const SWITCH_HANDLE: Vec4 = Vec4::new(0.5, 0.1, 0.0, 1.0);
+                if state.switched {
+                    sprite.indicator.set(
+                        &rect::Pin {
+                            position: self.position,
+                            color: Color::Fixed(SWITCH_HANDLE),
+                        }
+                        .into(),
+                    )
+                } else {
+                    sprite.indicator.set(
+                        &rect::SidePin {
+                            position: self.position,
+                            orientation: self.orientation.opposite(),
+                            color: Color::Fixed(SWITCH_HANDLE),
+                        }
+                        .into(),
+                    )
+                }
+            }
         };
     }
 }
@@ -1162,6 +1329,7 @@ enum ComponentData {
     Pin(PinState, PinSprite),
     Flip(FlipState, FlipSprite),
     Flop(FlopState, FlopSprite),
+    Switch(SwitchState, SwitchSprite),
 }
 
 struct PinState {
@@ -1192,6 +1360,18 @@ struct FlopSprite {
     body: rect::Handle,
     input: rect::Handle,
     output: rect::Handle,
+}
+
+struct SwitchState {
+    input_cluster_index: u32,
+    output_cluster_index: u32,
+    switched: bool,
+}
+
+struct SwitchSprite {
+    body: rect::Handle,
+    output: rect::Handle,
+    indicator: rect::Handle,
 }
 
 struct Wire {

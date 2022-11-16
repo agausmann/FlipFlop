@@ -241,6 +241,11 @@ enum Sprite {
         body: rect::Handle,
         output: rect::Handle,
     },
+    Switch {
+        indicator: rect::Handle,
+        body: rect::Handle,
+        output: rect::Handle,
+    },
 }
 
 impl Sprite {
@@ -259,6 +264,11 @@ impl Sprite {
                 body: renderer.insert(&Default::default()),
                 output: renderer.insert(&Default::default()),
             },
+            ComponentType::Switch => Self::Switch {
+                indicator: renderer.insert(&Default::default()),
+                body: renderer.insert(&Default::default()),
+                output: renderer.insert(&Default::default()),
+            },
         }
     }
 
@@ -267,6 +277,7 @@ impl Sprite {
             Self::Pin { .. } => ComponentType::Pin,
             Self::Flip { .. } => ComponentType::Flip,
             Self::Flop { .. } => ComponentType::Flop,
+            Self::Switch { .. } => ComponentType::Switch,
         }
     }
 
@@ -343,6 +354,35 @@ impl Sprite {
                     );
                 } else {
                     input.set(&Default::default());
+                    body.set(&Default::default());
+                    output.set(&Default::default());
+                }
+            }
+            Self::Switch {
+                indicator,
+                body,
+                output,
+            } => {
+                if visible {
+                    indicator.set(
+                        &rect::SidePin {
+                            position,
+                            orientation: orientation.opposite(),
+                            color: Color::Fixed(Vec4::new(0.5, 0.1, 0.0, 1.0)),
+                        }
+                        .into(),
+                    );
+                    body.set(&rect::Body { position }.into());
+                    output.set(
+                        &rect::Output {
+                            position,
+                            orientation,
+                            color: Color::Fixed(Vec4::new(0.0, 0.0, 0.0, 1.0)),
+                        }
+                        .into(),
+                    );
+                } else {
+                    indicator.set(&Default::default());
                     body.set(&Default::default());
                     output.set(&Default::default());
                 }
