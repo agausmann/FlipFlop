@@ -98,6 +98,12 @@ const VERTICES: &[Vertex] = &[
 
 const INDICES: &[u16] = &[0, 1, 2, 0, 2, 3];
 
+#[derive(Clone, Copy, Pod, Zeroable)]
+#[repr(C)]
+struct WirePalette {
+    buffer: [[f32; 4]; 2],
+}
+
 pub struct RectRenderer {
     gfx: GraphicsContext,
     render_pipeline: wgpu::RenderPipeline,
@@ -114,16 +120,28 @@ impl RectRenderer {
             gfx.device
                 .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                     label: Some("RectRenderer.bind_group_layout"),
-                    entries: &[wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::VERTEX,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
+                    entries: &[
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 0,
+                            visibility: wgpu::ShaderStages::VERTEX,
+                            ty: wgpu::BindingType::Buffer {
+                                ty: wgpu::BufferBindingType::Uniform,
+                                has_dynamic_offset: false,
+                                min_binding_size: None,
+                            },
+                            count: None,
                         },
-                        count: None,
-                    }],
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 1,
+                            visibility: wgpu::ShaderStages::VERTEX,
+                            ty: wgpu::BindingType::Buffer {
+                                ty: wgpu::BufferBindingType::Uniform,
+                                has_dynamic_offset: false,
+                                min_binding_size: None,
+                            },
+                            count: None,
+                        },
+                    ],
                 });
 
         let pipeline_layout = gfx
@@ -193,14 +211,29 @@ impl RectRenderer {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
+        let wire_palette_buffer =
+            gfx.device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("RectRenderer.wire_palette_buffer"),
+                    contents: bytemuck::bytes_of(&WirePalette {
+                        buffer: [[0.0, 0.0, 0.0, 1.0], [1.0, 0.0, 0.0, 1.0]],
+                    }),
+                    usage: wgpu::BufferUsages::UNIFORM,
+                });
 
         let bind_group = gfx.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("RectRenderer.bind_group"),
             layout: &bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: cluster_state_buffer.as_entire_binding(),
-            }],
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: cluster_state_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wire_palette_buffer.as_entire_binding(),
+                },
+            ],
         });
 
         let instances = InstanceManager::new(gfx);
