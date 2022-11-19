@@ -43,6 +43,7 @@ Interact with Component - E
 2 - Flip
 3 - Flop
 4 - Switch
+5 - Lamp
 ";
 
 pub type GraphicsContext = Arc<GraphicsContextInner>;
@@ -300,6 +301,9 @@ impl State {
                         }
                         VirtualKeyCode::Key4 if pressed => {
                             self.cursor_manager.set_place_type(ComponentType::Switch);
+                        }
+                        VirtualKeyCode::Key5 if pressed => {
+                            self.cursor_manager.set_place_type(ComponentType::Lamp);
                         }
                         VirtualKeyCode::E if pressed => {
                             //TODO more intuitive controls?

@@ -2,7 +2,7 @@ use crate::board::background::BackgroundBoardRenderer;
 use crate::board::BoardRenderer;
 use crate::depot::{self, Depot};
 use crate::direction::{Direction, Relative};
-use crate::rect::{self, Color, RectRenderer, WireConnection};
+use crate::rect::{self, Color, RectRenderer, WireConnection, LAMP_PALETTE, WIRE_PALETTE};
 use crate::simulation::Simulation;
 use crate::viewport::Viewport;
 use crate::GraphicsContext;
@@ -88,6 +88,7 @@ impl Circuit {
                 }
                 component.update_sprite();
             }
+            ComponentData::Lamp(..) => {}
         }
     }
 
@@ -106,8 +107,8 @@ impl Circuit {
             if let Some(component_id) = &tile.component {
                 let component = self.components.get(component_id);
                 match component.get_type() {
-                    ComponentType::Pin => {
-                        // Wires can always be placed across pins.
+                    ComponentType::Pin | ComponentType::Lamp => {
+                        // Wires can always be placed across pins and lamps.
                     }
                     ComponentType::Flip => {
                         // Wires can be placed across flips if it connects to _either_ the input or
@@ -209,8 +210,8 @@ impl Circuit {
         }
 
         match ty {
-            ComponentType::Pin => {
-                // Pins have no special rules.
+            ComponentType::Pin | ComponentType::Lamp => {
+                // Pins and lamps have no special rules.
             }
             ComponentType::Flip => {
                 // Flips can be placed if there is no wire on the output side.
@@ -288,6 +289,7 @@ impl Circuit {
                 ComponentType::Flip => {}
                 ComponentType::Flop => {}
                 ComponentType::Switch => {}
+                ComponentType::Lamp => {}
             }
         }
     }
@@ -479,6 +481,38 @@ impl Circuit {
                 };
                 ComponentData::Switch(state, sprite)
             }
+            ComponentType::Lamp => {
+                let mut node = None;
+                if let Some(tile) = self.tile(position).cloned() {
+                    let directions = [
+                        Direction::North,
+                        Direction::East,
+                        Direction::South,
+                        Direction::West,
+                    ];
+                    node = directions
+                        .iter()
+                        .flat_map(|&dir| tile.wires.get(dir))
+                        .map(|wire_handle| GraphNode::Wire(wire_handle))
+                        .fold(None, |acc, next| match acc {
+                            Some(current) => {
+                                self.merge_clusters(current, next);
+                                Some(current)
+                            }
+                            None => Some(next),
+                        });
+                }
+                let cluster_index = match node {
+                    Some(node) => self.cluster_id(&node),
+                    None => self.simulation.alloc_cluster(),
+                };
+
+                let state = LampState { cluster_index };
+                let sprite = LampSprite {
+                    lamp: self.rect_renderer.insert(&Default::default()),
+                };
+                ComponentData::Lamp(state, sprite)
+            }
         };
         let component = Component {
             data,
@@ -650,6 +684,11 @@ impl Circuit {
                     self.simulation.free_cluster(output_cluster_index);
                 }
             }
+            ComponentData::Lamp(state, _sprite) => {
+                if !self.has_neighbors(&GraphNode::Component(component_id, Direction::North)) {
+                    self.simulation.free_cluster(state.cluster_index);
+                }
+            }
         }
 
         let component = self.components.remove(&component_id);
@@ -658,7 +697,7 @@ impl Circuit {
         tile.update_crossover(component.position, &mut self.rect_renderer);
 
         match &component.data {
-            ComponentData::Pin(..) => {
+            ComponentData::Pin(..) | ComponentData::Lamp(..) => {
                 let directions = [
                     Direction::North,
                     Direction::East,
@@ -798,6 +837,9 @@ impl Circuit {
                                 unreachable!()
                             }
                         }
+                        ComponentData::Lamp(state, _sprite) => {
+                            state.cluster_index = into_index;
+                        }
                     }
                     component.update_sprite();
                 }
@@ -895,6 +937,9 @@ impl Circuit {
                                 unreachable!()
                             }
                         }
+                        ComponentData::Lamp(state, _sprite) => {
+                            state.cluster_index = split_index;
+                        }
                     }
                     component.update_sprite();
                 }
@@ -968,6 +1013,7 @@ impl Circuit {
                             unreachable!()
                         }
                     }
+                    ComponentData::Lamp(state, _sprite) => state.cluster_index,
                 }
             }
         }
@@ -996,8 +1042,8 @@ impl Circuit {
                 let component = self.components.get(&handle);
                 let tile = self.tile(component.position).unwrap();
                 let component_relatives: &[Relative] = match component.get_type() {
-                    ComponentType::Pin => {
-                        // All faces of a pin are connected.
+                    ComponentType::Pin | ComponentType::Lamp => {
+                        // All faces of a pin or lamp are connected.
                         &[
                             Relative::Same,
                             Relative::Right,
@@ -1071,6 +1117,9 @@ impl<'a> fmt::Display for TileDebugInfo<'a> {
                             "Component: Switch ({} -> {})",
                             state.input_cluster_index, state.output_cluster_index
                         )?;
+                    }
+                    ComponentData::Lamp(state, _sprite) => {
+                        writeln!(f, "Component: Lamp ({})", state.cluster_index)?;
                     }
                 }
             }
@@ -1165,6 +1214,7 @@ pub enum ComponentType {
     Flip,
     Flop,
     Switch,
+    Lamp,
 }
 
 struct Component {
@@ -1180,6 +1230,7 @@ impl Component {
             ComponentData::Flip(..) => ComponentType::Flip,
             ComponentData::Flop(..) => ComponentType::Flop,
             ComponentData::Switch(..) => ComponentType::Switch,
+            ComponentData::Lamp(..) => ComponentType::Lamp,
         }
     }
 
@@ -1201,6 +1252,7 @@ impl Component {
                 }
             }
             ComponentType::Switch => WireConnection::Output,
+            ComponentType::Lamp => WireConnection::Pin,
         }
     }
 
@@ -1214,6 +1266,7 @@ impl Component {
                             cluster_index: state.cluster_index,
                             delayed: false,
                             inverted: false,
+                            palette_index: WIRE_PALETTE,
                         },
                     }
                     .into(),
@@ -1233,6 +1286,7 @@ impl Component {
                             cluster_index: state.input_cluster_index,
                             delayed: false,
                             inverted: false,
+                            palette_index: WIRE_PALETTE,
                         },
                     }
                     .into(),
@@ -1245,6 +1299,7 @@ impl Component {
                             cluster_index: state.input_cluster_index,
                             delayed: true,
                             inverted: true,
+                            palette_index: WIRE_PALETTE,
                         },
                     }
                     .into(),
@@ -1265,6 +1320,7 @@ impl Component {
                             cluster_index: state.input_cluster_index,
                             delayed: false,
                             inverted: false,
+                            palette_index: WIRE_PALETTE,
                         },
                     }
                     .into(),
@@ -1277,6 +1333,7 @@ impl Component {
                             cluster_index: state.input_cluster_index,
                             delayed: true,
                             inverted: false,
+                            palette_index: WIRE_PALETTE,
                         },
                     }
                     .into(),
@@ -1297,6 +1354,7 @@ impl Component {
                             cluster_index: state.input_cluster_index,
                             delayed: true,
                             inverted: false,
+                            palette_index: WIRE_PALETTE,
                         },
                     }
                     .into(),
@@ -1321,6 +1379,20 @@ impl Component {
                     )
                 }
             }
+            ComponentData::Lamp(state, sprite) => {
+                sprite.lamp.set(
+                    &rect::Lamp {
+                        position: self.position,
+                        color: Color::Wire {
+                            cluster_index: state.cluster_index,
+                            delayed: false,
+                            inverted: false,
+                            palette_index: LAMP_PALETTE,
+                        },
+                    }
+                    .into(),
+                );
+            }
         };
     }
 }
@@ -1330,6 +1402,7 @@ enum ComponentData {
     Flip(FlipState, FlipSprite),
     Flop(FlopState, FlopSprite),
     Switch(SwitchState, SwitchSprite),
+    Lamp(LampState, LampSprite),
 }
 
 struct PinState {
@@ -1374,6 +1447,14 @@ struct SwitchSprite {
     indicator: rect::Handle,
 }
 
+struct LampState {
+    cluster_index: u32,
+}
+
+struct LampSprite {
+    lamp: rect::Handle,
+}
+
 struct Wire {
     start: IVec2,
     end: IVec2,
@@ -1403,6 +1484,7 @@ impl Wire {
                     cluster_index: self.cluster_index,
                     delayed: false,
                     inverted: false,
+                    palette_index: WIRE_PALETTE,
                 },
             }
             .into(),

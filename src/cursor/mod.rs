@@ -246,6 +246,9 @@ enum Sprite {
         body: rect::Handle,
         output: rect::Handle,
     },
+    Lamp {
+        lamp: rect::Handle,
+    },
 }
 
 impl Sprite {
@@ -269,6 +272,9 @@ impl Sprite {
                 body: renderer.insert(&Default::default()),
                 output: renderer.insert(&Default::default()),
             },
+            ComponentType::Lamp => Self::Lamp {
+                lamp: renderer.insert(&Default::default()),
+            },
         }
     }
 
@@ -278,6 +284,7 @@ impl Sprite {
             Self::Flip { .. } => ComponentType::Flip,
             Self::Flop { .. } => ComponentType::Flop,
             Self::Switch { .. } => ComponentType::Switch,
+            Self::Lamp { .. } => ComponentType::Lamp,
         }
     }
 
@@ -385,6 +392,19 @@ impl Sprite {
                     indicator.set(&Default::default());
                     body.set(&Default::default());
                     output.set(&Default::default());
+                }
+            }
+            Self::Lamp { lamp } => {
+                if visible {
+                    lamp.set(
+                        &rect::Lamp {
+                            position,
+                            color: Color::Fixed(Vec4::new(1.0, 1.0, 0.0, 1.0)),
+                        }
+                        .into(),
+                    );
+                } else {
+                    lamp.set(&Default::default());
                 }
             }
         }

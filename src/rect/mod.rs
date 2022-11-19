@@ -49,15 +49,17 @@ struct Instance {
     size: [f32; 2],
     color: [f32; 4],
     cluster_index: u32,
+    palette_index: u32,
 }
 
-static INSTANCE_ATTRIBUTES: Lazy<[wgpu::VertexAttribute; 5]> = Lazy::new(|| {
+static INSTANCE_ATTRIBUTES: Lazy<[wgpu::VertexAttribute; 6]> = Lazy::new(|| {
     wgpu::vertex_attr_array![
         1 => Float32x2,
         2 => Float32,
         3 => Float32x2,
         4 => Float32x4,
         5 => Uint32,
+        6 => Uint32,
     ]
 });
 
@@ -77,6 +79,7 @@ impl Instance {
             size: rect.size.into(),
             color: rect.color.color().into(),
             cluster_index: rect.color.cluster_index(),
+            palette_index: rect.color.palette_index(),
         }
     }
 }
@@ -101,7 +104,7 @@ const INDICES: &[u16] = &[0, 1, 2, 0, 2, 3];
 #[derive(Clone, Copy, Pod, Zeroable)]
 #[repr(C)]
 struct WirePalette {
-    buffer: [[f32; 4]; 2],
+    buffer: [[f32; 4]; 4],
 }
 
 pub struct RectRenderer {
@@ -216,7 +219,14 @@ impl RectRenderer {
                 .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                     label: Some("RectRenderer.wire_palette_buffer"),
                     contents: bytemuck::bytes_of(&WirePalette {
-                        buffer: [[0.0, 0.0, 0.0, 1.0], [1.0, 0.0, 0.0, 1.0]],
+                        buffer: [
+                            // Normal wire
+                            [0.0, 0.0, 0.0, 1.0],
+                            [1.0, 0.0, 0.0, 1.0],
+                            // Lamp
+                            [0.03, 0.03, 0.03, 1.0],
+                            [1.0, 1.0, 0.0, 1.0],
+                        ],
                     }),
                     usage: wgpu::BufferUsages::UNIFORM,
                 });
@@ -329,6 +339,7 @@ pub enum Color {
     Fixed(Vec4),
     Wire {
         cluster_index: u32,
+        palette_index: u32,
         delayed: bool,
         inverted: bool,
     },
@@ -349,15 +360,22 @@ impl Color {
     }
 
     fn cluster_index(&self) -> u32 {
-        let idx = match self {
+        match self {
             &Self::Wire {
                 cluster_index,
                 delayed,
                 inverted,
+                ..
             } => (cluster_index << 2) | ((delayed as u32) << 1) | (inverted as u32),
             _ => 0xffffffff,
-        };
-        idx
+        }
+    }
+
+    fn palette_index(&self) -> u32 {
+        match self {
+            &Self::Wire { palette_index, .. } => palette_index,
+            _ => 0,
+        }
     }
 }
 
@@ -365,6 +383,7 @@ const WIRE_RADIUS: f32 = 1.0 / 16.0;
 const PIN_RADIUS: f32 = 2.0 / 16.0;
 const CROSSOVER_RADIUS: f32 = 3.0 / 16.0;
 const BODY_RADIUS: f32 = 4.0 / 16.0;
+const LAMP_RADIUS: f32 = 6.0 / 16.0;
 const OUTPUT_RADIUS: f32 = 2.0 / 16.0;
 const OUTPUT_HEIGHT: f32 = 2.0 / 16.0;
 const SIDE_PIN_DISTANCE: f32 = 2.0 / 16.0;
@@ -377,6 +396,10 @@ const PIN_Z_INDEX: u8 = 5;
 const BODY_Z_INDEX: u8 = 1;
 const OUTPUT_Z_INDEX: u8 = 5;
 const SIDE_PIN_Z_INDEX: u8 = 5;
+const LAMP_Z_INDEX: u8 = 6;
+
+pub const WIRE_PALETTE: u32 = 0;
+pub const LAMP_PALETTE: u32 = 1;
 
 #[derive(Clone, Copy)]
 pub enum WireConnection {
@@ -528,6 +551,22 @@ impl From<Crossover> for Rect {
             z_index: CROSSOVER_Z_INDEX,
             size: Vec2::splat(2.0 * CROSSOVER_RADIUS),
             color: Color::Fixed(Vec4::new(0.5, 0.5, 0.5, 1.0)),
+        }
+    }
+}
+
+pub struct Lamp {
+    pub position: IVec2,
+    pub color: Color,
+}
+
+impl From<Lamp> for Rect {
+    fn from(lamp: Lamp) -> Self {
+        Self {
+            position: lamp.position.as_vec2() + Vec2::splat(0.5 - LAMP_RADIUS),
+            z_index: LAMP_Z_INDEX,
+            size: Vec2::splat(2.0 * LAMP_RADIUS),
+            color: lamp.color,
         }
     }
 }

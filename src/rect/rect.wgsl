@@ -5,6 +5,7 @@ struct VertexInput {
     @location(3) size: vec2<f32>,
     @location(4) color: vec4<f32>,
     @location(5) cluster_index: u32,
+    @location(6) palette_index: u32,
 };
 
 struct VertexOutput {
@@ -45,7 +46,7 @@ fn vs_main(in: VertexInput) -> VertexOutput {
         let is_on: u32 = (cluster_states.buffer[array_index][component_index] >> bit_index) & 1u;
         let invert: u32 = in.cluster_index & 1u;
 
-        out.color = wire_palette.buffer[is_on ^ invert];
+        out.color = wire_palette.buffer[(in.palette_index << 1u) | (is_on ^ invert)];
     }
     
     return out;
