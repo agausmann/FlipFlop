@@ -1,4 +1,5 @@
-use crate::board::{self, BoardRenderer};
+use crate::board::background::BackgroundBoardRenderer;
+use crate::board::BoardRenderer;
 use crate::depot::{self, Depot};
 use crate::direction::{Direction, Relative};
 use crate::rect::{self, Color, RectRenderer, WireConnection};
@@ -11,9 +12,9 @@ use std::fmt;
 use std::rc::Rc;
 
 pub struct Circuit {
+    background_board_renderer: BackgroundBoardRenderer,
     board_renderer: BoardRenderer,
     rect_renderer: RectRenderer,
-    _root_board: board::Handle,
     tiles: HashMap<IVec2, Tile>,
     components: Depot<Component>,
     wires: Depot<Wire>,
@@ -22,18 +23,10 @@ pub struct Circuit {
 
 impl Circuit {
     pub fn new(gfx: &GraphicsContext, viewport: &Viewport) -> Self {
-        let mut board_renderer = BoardRenderer::new(gfx, viewport);
-        let _root_board = board_renderer.insert(&board::Board {
-            position: IVec2::new(-10_000, -10_000),
-            size: IVec2::new(20_000, 20_000),
-            color: [0.1, 0.1, 0.1, 1.0],
-            z_index: 0,
-        });
-
         Self {
-            board_renderer,
+            background_board_renderer: BackgroundBoardRenderer::new(gfx, viewport),
+            board_renderer: BoardRenderer::new(gfx, viewport),
             rect_renderer: RectRenderer::new(gfx, viewport),
-            _root_board,
             tiles: HashMap::new(),
             components: Depot::new(),
             wires: Depot::new(),
@@ -52,6 +45,8 @@ impl Circuit {
         self.simulation.tick();
         self.rect_renderer.update_cluster_states(&self.simulation);
 
+        self.background_board_renderer
+            .draw(viewport, encoder, frame_view);
         self.board_renderer
             .draw(viewport, encoder, frame_view, depth_view);
         self.rect_renderer

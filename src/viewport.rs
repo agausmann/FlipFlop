@@ -195,6 +195,8 @@ impl Viewport {
 struct Uniforms {
     view_proj: [[f32; 4]; 4],
     view_size: [f32; 2],
+    view_size_tiles: [f32; 2],
+    view_offset_tiles: [f32; 2],
     padding: [u8; 8],
 }
 
@@ -203,6 +205,8 @@ impl Uniforms {
         Self {
             view_proj: Mat4::IDENTITY.to_cols_array_2d(),
             view_size: [1.0, 1.0],
+            view_size_tiles: [1.0, 1.0],
+            view_offset_tiles: [0.0, 0.0],
             padding: [0; 8],
         }
     }
@@ -219,6 +223,8 @@ impl Uniforms {
         Self {
             view_proj: (proj * view).to_cols_array_2d(),
             view_size: size.into(),
+            view_size_tiles: (size / camera.zoom).into(),
+            view_offset_tiles: camera.pan.fract().into(),
             padding: [0; 8],
         }
     }
