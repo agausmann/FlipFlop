@@ -633,11 +633,16 @@ impl Circuit {
                 let &SwitchState {
                     input_cluster_index,
                     output_cluster_index,
+                    switched,
                     ..
                 } = state;
 
                 self.simulation
                     .remove_flop(input_cluster_index, output_cluster_index);
+
+                if switched {
+                    self.simulation.unpower(input_cluster_index);
+                }
 
                 self.simulation.free_cluster(input_cluster_index);
 
